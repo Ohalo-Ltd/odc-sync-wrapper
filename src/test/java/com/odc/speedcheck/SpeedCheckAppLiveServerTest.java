@@ -1,6 +1,6 @@
 package com.odc.speedcheck;
 
-import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayOutputStream;
@@ -13,8 +13,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class SpeedCheckAppLiveServerTest {
     @Test
-    @Disabled("Requires live server; run manually with mvn -Dtest=SpeedCheckAppLiveServerTest test")
     void applicationRunsAgainstLiveServer() throws Exception {
+        Assumptions.assumeTrue("true".equals(System.getenv("RUN_LIVE_TESTS")),
+                "Set RUN_LIVE_TESTS=true to enable this test");
         String baseUrl = System.getenv("DXR_BASE_URL");
         String apiKey = System.getenv("DXR_API_KEY");
         assertNotNull(baseUrl, "DXR_BASE_URL must be set");

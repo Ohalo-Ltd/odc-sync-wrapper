@@ -13,11 +13,11 @@ java -jar target/odc-speed-check-0.1.0-SNAPSHOT.jar <count>
 ### Live Integration Test
 
 An additional test hits a real Data X-Ray server using the `DXR_BASE_URL` and
-`DXR_API_KEY` environment variables. It is disabled by default because it may
-fail if the server is unavailable. Run it manually with:
+`DXR_API_KEY` environment variables. It is skipped unless the
+`RUN_LIVE_TESTS` environment variable is set to `true`. Run it manually with:
 
 ```
-mvn -Dtest=SpeedCheckAppLiveServerTest test
+RUN_LIVE_TESTS=true mvn -Dtest=SpeedCheckAppLiveServerTest test
 ```
 
 ## API Endpoints
