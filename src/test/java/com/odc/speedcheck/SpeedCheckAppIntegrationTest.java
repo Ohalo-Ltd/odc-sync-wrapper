@@ -1,0 +1,59 @@
+package com.odc.speedcheck;
+
+import okhttp3.mockwebserver.Dispatcher;
+import okhttp3.mockwebserver.MockResponse;
+import okhttp3.mockwebserver.MockWebServer;
+import okhttp3.mockwebserver.RecordedRequest;
+import org.junit.jupiter.api.Test;
+
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+public class SpeedCheckAppIntegrationTest {
+    @Test
+    void applicationRunsWithEnvVars() throws Exception {
+        MockWebServer server = new MockWebServer();
+        AtomicInteger counter = new AtomicInteger();
+        server.setDispatcher(new Dispatcher() {
+            @Override
+            public MockResponse dispatch(RecordedRequest request) {
+                if (request.getMethod().equals("POST")) {
+                    int id = counter.incrementAndGet();
+                    return new MockResponse()
+                            .setResponseCode(202)
+                            .setBody("{\"id\":\"job" + id + "\"}");
+                }
+                if (request.getMethod().equals("GET")) {
+                    return new MockResponse()
+                            .setResponseCode(200)
+                            .setBody("{\"state\":\"FINISHED\"}");
+                }
+                return new MockResponse().setResponseCode(404);
+            }
+        });
+        server.start();
+        String baseUrl = server.url("/").toString().replaceAll("/$", "");
+        ProcessBuilder pb = new ProcessBuilder(
+                "java", "-cp", System.getProperty("java.class.path"),
+                "com.odc.speedcheck.SpeedCheckApp", "2");
+        pb.environment().put("DXR_BASE_URL", baseUrl);
+        pb.environment().put("DXR_API_KEY", "test-key");
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (InputStream is = process.getInputStream()) {
+            is.transferTo(baos);
+        }
+        int exit = process.waitFor();
+        server.shutdown();
+        String output = baos.toString(StandardCharsets.UTF_8);
+        assertEquals(0, exit, output);
+        assertTrue(output.contains("complete with state FINISHED"), output);
+        assertTrue(output.contains("All jobs completed"), output);
+    }
+}
