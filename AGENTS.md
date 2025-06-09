@@ -8,5 +8,5 @@ rules when contributing:
 * Run `mvn test` before every commit to ensure tests pass.
 * Add new unit tests for any new functionality.
 * The application expects `DXR_BASE_URL` and `DXR_API_KEY` environment variables
-  when run, but these are not required for the unit tests.
+  when run, but should also be used in integration tests.
 * Keep sample data in `samples/sample.txt` so tests continue to work.
