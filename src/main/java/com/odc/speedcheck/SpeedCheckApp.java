@@ -37,6 +37,7 @@ public class SpeedCheckApp {
         Instant start = Instant.now();
         List<Future<Long>> futures = new ArrayList<>();
         for (int i = 0; i < count; i++) {
+            Thread.sleep(100); // simulate some delay in jobs
             futures.add(executor.submit(new JobTask(client, file)));
         }
         // wait for tasks
