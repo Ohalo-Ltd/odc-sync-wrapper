@@ -13,15 +13,15 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class SpeedCheckApp {
-    private static final int[] DATASOURCE_IDS = {100, 101, 102, 103, 104};
-    private static final int FIRST_DATASOURCE_ID_INDEX = 100;
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 1) {
-            System.err.println("Usage: java -jar odc-speed-check.jar <count>");
+        if (args.length != 3) {
+            System.err.println("Usage: java -jar odc-speed-check.jar <count> <firstDatasourceId> <datasourceCount>");
             System.exit(1);
         }
         int count = Integer.parseInt(args[0]);
+        int firstDatasourceId = Integer.parseInt(args[1]);
+        int datasourceCount = Integer.parseInt(args[2]);
         String baseUrl = System.getenv("DXR_BASE_URL");
         String apiKey = System.getenv("DXR_API_KEY");
         if (baseUrl == null || apiKey == null) {
@@ -31,7 +31,8 @@ public class SpeedCheckApp {
         Path file = Paths.get("samples/sample.txt");
         DxrClient client = new DxrClient(baseUrl, apiKey);
 
-        ExecutorService executor = Executors.newFixedThreadPool(DATASOURCE_IDS.length, new DatasourceThreadFactory());
+        ExecutorService executor = Executors.newFixedThreadPool(datasourceCount,
+                new DatasourceThreadFactory(firstDatasourceId));
 
         Instant start = Instant.now();
         List<Future<?>> futures = new ArrayList<>();
@@ -50,7 +51,11 @@ public class SpeedCheckApp {
 
     private static class DatasourceThreadFactory implements ThreadFactory {
 
-        private final AtomicInteger datasourceIdIndex = new AtomicInteger(FIRST_DATASOURCE_ID_INDEX);
+        private final AtomicInteger datasourceIdIndex;
+
+        DatasourceThreadFactory(int firstId) {
+            this.datasourceIdIndex = new AtomicInteger(firstId);
+        }
 
 
         @Override

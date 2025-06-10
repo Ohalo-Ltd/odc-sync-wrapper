@@ -7,7 +7,7 @@ Run the application with:
 
 ```
 mvn package
-java -jar target/odc-speed-check-0.1.0-SNAPSHOT.jar <count>
+java -jar target/odc-speed-check-0.1.0-SNAPSHOT.jar <count> <firstDatasourceId> <datasourceCount>
 ```
 
 ### Live Integration Test

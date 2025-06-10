@@ -23,7 +23,7 @@ public class SpeedCheckAppLiveServerTest {
 
         ProcessBuilder pb = new ProcessBuilder(
                 "java", "-cp", System.getProperty("java.class.path"),
-                "com.odc.speedcheck.SpeedCheckApp", "1");
+                "com.odc.speedcheck.SpeedCheckApp", "1", "100", "1");
         pb.environment().put("DXR_BASE_URL", baseUrl);
         pb.environment().put("DXR_API_KEY", apiKey);
         pb.redirectErrorStream(true);
