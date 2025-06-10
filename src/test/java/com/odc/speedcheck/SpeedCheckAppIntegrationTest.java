@@ -59,6 +59,8 @@ public class SpeedCheckAppIntegrationTest {
             assertEquals(0, exit, output);
             assertTrue(output.contains("complete with state FINISHED"), output);
             assertTrue(output.contains("All jobs completed"), output);
+            assertTrue(output.contains("Average latency"), output);
+            assertTrue(output.contains("Throughput"), output);
         }
     }
 }

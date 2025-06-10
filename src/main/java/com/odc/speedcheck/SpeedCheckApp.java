@@ -35,18 +35,23 @@ public class SpeedCheckApp {
                 new DatasourceThreadFactory(firstDatasourceId));
 
         Instant start = Instant.now();
-        List<Future<?>> futures = new ArrayList<>();
+        List<Future<Long>> futures = new ArrayList<>();
         for (int i = 0; i < count; i++) {
             futures.add(executor.submit(new JobTask(client, file)));
         }
         // wait for tasks
-        for (Future<?> f : futures) {
-            f.get();
+        long totalLatency = 0;
+        for (Future<Long> f : futures) {
+            totalLatency += f.get();
         }
         executor.shutdown();
         Instant end = Instant.now();
         Duration elapsed = Duration.between(start, end);
+        double avgLatencySec = (double) totalLatency / count / 1000.0;
+        double throughput = count / (elapsed.toMillis() / 1000.0);
         System.out.printf("All jobs completed in %d seconds.%n", elapsed.toSeconds());
+        System.out.printf("Average latency %.2f seconds%n", avgLatencySec);
+        System.out.printf("Throughput %.2f jobs/second%n", throughput);
     }
 
     private static class DatasourceThreadFactory implements ThreadFactory {
