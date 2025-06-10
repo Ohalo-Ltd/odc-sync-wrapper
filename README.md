@@ -35,3 +35,29 @@ The application calls the Data X-Ray API at two endpoints:
    - Uses the same authorization header.
    - Responds with JSON containing a `state` field. The job is finished when
      this value is `FINISHED`.
+
+
+
+# Testing DXR configurations
+
+## Initializing the DXR
+
+
+### Create your on-demand classifiers
+
+The DXR server must have the on demand classifier datasources created. Create one on-demand classifier per concurrency that you would like to have.
+
+You can initialize datasources in bulk using the following
+
+```
+for i in {1..197}; do
+  curl -X 'POST' \
+    "${DXR_BASE_URL}/datasources/with-attributes" \
+    -H "Authorization: Bearer ${DXR_API_KEY}" \
+    -H "Content-Type: application/json" \
+    -d '{"name":"odc-xxx","datasourceConnectorTypeId":21,"status":"ENABLED","datasourceAttributesDTOList":[{"datasourceConnectorTypeAttributeId":93,"value":""}]}'
+done
+```
+
+In the UI, create a setting profile and then bulk-add all 200 datasources to the settings profile.
+

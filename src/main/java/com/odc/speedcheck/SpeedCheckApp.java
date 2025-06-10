@@ -10,9 +10,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class SpeedCheckApp {
     private static final int[] DATASOURCE_IDS = {100, 101, 102, 103, 104};
+    private static final int FIRST_DATASOURCE_ID_INDEX = 100;
 
     public static void main(String[] args) throws Exception {
         if (args.length != 1) {
@@ -47,16 +49,20 @@ public class SpeedCheckApp {
     }
 
     private static class DatasourceThreadFactory implements ThreadFactory {
-        private int index = 0;
+
+        private final AtomicInteger datasourceIdIndex = new AtomicInteger(FIRST_DATASOURCE_ID_INDEX);
+
+
         @Override
         public Thread newThread(Runnable r) {
-            int dsId = DATASOURCE_IDS[index % DATASOURCE_IDS.length];
-            index++;
+            int dsId = datasourceIdIndex.getAndIncrement();
+
             Thread t = new Thread(() -> {
                 DatasourceContext.set(dsId);
                 r.run();
             });
             t.setName("dxr-" + dsId);
+            System.out.printf("Creating thread %s with datasource id %d%n", t.getName(), dsId);
             return t;
         }
     }
