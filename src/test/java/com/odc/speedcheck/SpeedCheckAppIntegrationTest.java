@@ -45,7 +45,7 @@ public class SpeedCheckAppIntegrationTest {
             String baseUrl = server.url("/").toString().replaceAll("/$", "");
             ProcessBuilder pb = new ProcessBuilder(
                     "java", "-cp", System.getProperty("java.class.path"),
-                    "com.odc.speedcheck.SpeedCheckApp", "2");
+                    "com.odc.speedcheck.SpeedCheckApp", "2", "100", "2");
             pb.environment().put("DXR_BASE_URL", baseUrl);
             pb.environment().put("DXR_API_KEY", "test-key");
             pb.redirectErrorStream(true);
@@ -59,6 +59,8 @@ public class SpeedCheckAppIntegrationTest {
             assertEquals(0, exit, output);
             assertTrue(output.contains("complete with state FINISHED"), output);
             assertTrue(output.contains("All jobs completed"), output);
+            assertTrue(output.contains("Average latency"), output);
+            assertTrue(output.contains("Throughput"), output);
         }
     }
 }
