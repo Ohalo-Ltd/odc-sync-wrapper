@@ -1,6 +1,8 @@
 package com.odc.speedcheck;
 
 import okhttp3.*;
+import dev.failsafe.Failsafe;
+import dev.failsafe.RetryPolicy;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -13,8 +15,17 @@ import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 
 
+import java.time.Duration;
+
 class DxrClient {
     record JobStatus(String state, long datasourceScanId) {}
+
+    private final RetryPolicy<Response> retryPolicy = RetryPolicy.<Response>builder()
+            .handle(IOException.class)
+            .handleResultIf(r -> r.code() >= 500)
+            .withBackoff(Duration.ofMillis(100), Duration.ofSeconds(1))
+            .withMaxAttempts(3)
+            .build();
 
     public static OkHttpClient getUnsafeOkHttpClient() {
         try {
@@ -51,6 +62,17 @@ class DxrClient {
         this.apiKey = apiKey;
     }
 
+    private Response executeWithRetry(Request request) throws IOException {
+        try {
+            return Failsafe.with(retryPolicy).get(() -> client.newCall(request).execute());
+        } catch (Exception e) {
+            if (e instanceof IOException io) {
+                throw io;
+            }
+            throw new IOException(e);
+        }
+    }
+
     String submitJob(int datasourceId, Path file) throws IOException {
 
         RequestBody fileBody = RequestBody.create(file.toFile(), MediaType.parse("text/plain"));
@@ -63,7 +85,7 @@ class DxrClient {
                 .header("Authorization", "Bearer " + apiKey)
                 .post(multipartBody)
                 .build();
-        try (Response response = client.newCall(request).execute()) {
+        try (Response response = executeWithRetry(request)) {
             String body = response.body() != null ? response.body().string() : "";
             if (!response.isSuccessful()) {
                 throw new IOException("Unexpected response: " + response.code() + " " + body);
@@ -80,7 +102,7 @@ class DxrClient {
                 .header("Authorization", "Bearer " + apiKey)
                 .get()
                 .build();
-        try (Response response = client.newCall(request).execute()) {
+        try (Response response = executeWithRetry(request)) {
             String body = response.body() != null ? response.body().string() : "";
             if (!response.isSuccessful()) {
                 throw new IOException("Unexpected response: " + response.code() + " " + body);
@@ -132,7 +154,7 @@ class DxrClient {
                 .header("Content-Type", "application/json")
                 .post(body)
                 .build();
-        try (Response response = client.newCall(request).execute()) {
+        try (Response response = executeWithRetry(request)) {
             String respBody = response.body() != null ? response.body().string() : "";
             if (!response.isSuccessful()) {
                 throw new IOException("Unexpected response: " + response.code() + " " + respBody);
