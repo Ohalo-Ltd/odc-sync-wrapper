@@ -15,13 +15,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class SpeedCheckApp {
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 3) {
-            System.err.println("Usage: java -jar odc-speed-check.jar <count> <firstDatasourceId> <datasourceCount>");
+        if (args.length != 4) {
+            System.err.println("Usage: java -jar odc-speed-check.jar <jobcount> <delayBetweenJobsMs> <firstDatasourceId> <datasourceCount>");
             System.exit(1);
         }
         int count = Integer.parseInt(args[0]);
-        int firstDatasourceId = Integer.parseInt(args[1]);
-        int datasourceCount = Integer.parseInt(args[2]);
+        int delayBetweenJobsMs = Integer.parseInt(args[1]);
+        int firstDatasourceId = Integer.parseInt(args[2]);
+        int datasourceCount = Integer.parseInt(args[3]);
         String baseUrl = System.getenv("DXR_BASE_URL");
         String apiKey = System.getenv("DXR_API_KEY");
         if (baseUrl == null || apiKey == null) {
@@ -37,7 +38,7 @@ public class SpeedCheckApp {
         Instant start = Instant.now();
         List<Future<Long>> futures = new ArrayList<>();
         for (int i = 0; i < count; i++) {
-            Thread.sleep(100); // simulate some delay in jobs
+            Thread.sleep(delayBetweenJobsMs); // simulate some delay in jobs
             futures.add(executor.submit(new JobTask(client, file)));
         }
         // wait for tasks
