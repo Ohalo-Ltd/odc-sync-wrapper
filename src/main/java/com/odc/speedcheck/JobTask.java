@@ -26,12 +26,18 @@ class JobTask implements Callable<Long> {
         Instant start = Instant.now();
         try {
             String jobId = client.submitJob(dsId, file);
-            String state;
+            DxrClient.JobStatus status;
             do {
                 Thread.sleep(1000);
-                state = client.getJobState(dsId, jobId);
-            } while (!"FINISHED".equals(state) && !"FAILED".equals(state));
-            System.out.printf("Thread %s job %s complete with state %s%n", Thread.currentThread().getName(), jobId, state);
+                status = client.getJobStatus(dsId, jobId);
+            } while (!"FINISHED".equals(status.state()) && !"FAILED".equals(status.state()));
+            if ("FINISHED".equals(status.state())) {
+                java.util.List<String> tags = client.getTagIds(status.datasourceScanId());
+                String tagStr = String.join(",", tags);
+                System.out.printf("Thread %s job %s complete with state %s and tag_ids:%s%n", Thread.currentThread().getName(), jobId, status.state(), tagStr);
+            } else {
+                System.out.printf("Thread %s job %s complete with state %s%n", Thread.currentThread().getName(), jobId, status.state());
+            }
             return Duration.between(start, Instant.now()).toMillis();
         } catch (IOException | InterruptedException e) {
             System.err.println("Error processing job on thread " + Thread.currentThread().getName());

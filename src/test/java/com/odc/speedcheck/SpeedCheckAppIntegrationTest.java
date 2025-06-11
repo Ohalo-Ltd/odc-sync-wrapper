@@ -27,16 +27,21 @@ public class SpeedCheckAppIntegrationTest {
                 @Override
                 public MockResponse dispatch(RecordedRequest request) {
 
-                    if (request.getMethod().equals("POST")) {
+                    if (request.getMethod().equals("POST") && request.getPath().contains("on-demand-classifiers")) {
                         int id = counter.incrementAndGet();
                         return new MockResponse()
                                 .setResponseCode(202)
                                 .setBody("{\"id\":\"job" + id + "\"}");
                     }
+                    if (request.getMethod().equals("POST") && request.getPath().contains("indexed-files/search")) {
+                        return new MockResponse()
+                                .setResponseCode(200)
+                                .setBody("{\"hits\":{\"hits\":[{\"_source\":{\"dxr#tags\":[1]}}]}}" );
+                    }
                     if (request.getMethod().equals("GET")) {
                         return new MockResponse()
                                 .setResponseCode(200)
-                                .setBody("{\"state\":\"FINISHED\"}");
+                                .setBody("{\"state\":\"FINISHED\",\"datasourceScanId\":1}");
                     }
                     return new MockResponse().setResponseCode(404);
                 }
@@ -57,7 +62,7 @@ public class SpeedCheckAppIntegrationTest {
             int exit = process.waitFor();
             String output = baos.toString(StandardCharsets.UTF_8);
             assertEquals(0, exit, output);
-            assertTrue(output.contains("complete with state FINISHED"), output);
+            assertTrue(output.contains("complete with state FINISHED and tag_ids:1"), output);
             assertTrue(output.contains("All jobs completed"), output);
             assertTrue(output.contains("Average latency"), output);
             assertTrue(output.contains("Throughput"), output);
