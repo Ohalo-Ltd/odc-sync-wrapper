@@ -34,9 +34,9 @@ class JobTask implements Callable<Long> {
             if ("FINISHED".equals(status.state())) {
                 java.util.List<String> tags = client.getTagIds(status.datasourceScanId());
                 String tagStr = String.join(",", tags);
-                System.out.printf("Thread %s job %s complete with state %s and tag_ids:%s%n", Thread.currentThread().getName(), jobId, status.state(), tagStr);
+                System.out.printf("%s Thread %s job %s complete with state %s and tag_ids:%s%n", java.time.Instant.now(), Thread.currentThread().getName(), jobId, status.state(), tagStr);
             } else {
-                System.out.printf("Thread %s job %s complete with state %s%n", Thread.currentThread().getName(), jobId, status.state());
+                System.out.printf("%s Thread %s job %s complete with state %s%n", java.time.Instant.now(), Thread.currentThread().getName(), jobId, status.state());
             }
             return Duration.between(start, Instant.now()).toMillis();
         } catch (IOException | InterruptedException e) {

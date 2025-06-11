@@ -50,7 +50,7 @@ public class SpeedCheckAppIntegrationTest {
             String baseUrl = server.url("/").toString().replaceAll("/$", "");
             ProcessBuilder pb = new ProcessBuilder(
                     "java", "-cp", System.getProperty("java.class.path"),
-                    "com.odc.speedcheck.SpeedCheckApp", "2", "100", "2");
+                    "com.odc.speedcheck.SpeedCheckApp", "2", "1000", "100", "2");
             pb.environment().put("DXR_BASE_URL", baseUrl);
             pb.environment().put("DXR_API_KEY", "test-key");
             pb.redirectErrorStream(true);
