@@ -3,6 +3,9 @@
 ## Building and running speed test
 
 This project uses Maven. Ensure `DXR_BASE_URL` and `DXR_API_KEY` environment variables are set.
+- `DXR_BASE_URL` should begin with `https://` and end with `/api`
+- `DXR_API_KEY` is the PAT from the console.
+
 Run the application with:
 
 ```
