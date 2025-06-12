@@ -8,6 +8,7 @@ import org.json.JSONObject;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocketFactory;
@@ -73,13 +74,15 @@ class DxrClient {
         }
     }
 
-    String submitJob(int datasourceId, Path file) throws IOException {
+    String submitJob(int datasourceId, List<Path> files) throws IOException {
 
-        RequestBody fileBody = RequestBody.create(file.toFile(), MediaType.parse("text/plain"));
-        RequestBody multipartBody = new MultipartBody.Builder()
-                .setType(MultipartBody.FORM)
-                .addFormDataPart("files", file.getFileName().toString(), fileBody)
-                .build();
+        MultipartBody.Builder bodyBuilder = new MultipartBody.Builder()
+                .setType(MultipartBody.FORM);
+        for (Path f : files) {
+            RequestBody fileBody = RequestBody.create(f.toFile(), MediaType.parse("text/plain"));
+            bodyBuilder.addFormDataPart("files", f.getFileName().toString(), fileBody);
+        }
+        RequestBody multipartBody = bodyBuilder.build();
         Request request = new Request.Builder()
                 .url(baseUrl + "/on-demand-classifiers/" + datasourceId + "/jobs")
                 .header("Authorization", "Bearer " + apiKey)

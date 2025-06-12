@@ -6,6 +6,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -15,21 +17,28 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class SpeedCheckApp {
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 4) {
-            System.err.println("Usage: java -jar odc-speed-check.jar <jobcount> <delayBetweenJobsMs> <firstDatasourceId> <datasourceCount>");
+        if (args.length != 5) {
+            System.err.println("Usage: java -jar odc-speed-check.jar <jobcount> <delayBetweenJobsMs> <firstDatasourceId> <datasourceCount> <batchSize>");
             System.exit(1);
         }
         int count = Integer.parseInt(args[0]);
         int delayBetweenJobsMs = Integer.parseInt(args[1]);
         int firstDatasourceId = Integer.parseInt(args[2]);
         int datasourceCount = Integer.parseInt(args[3]);
+        int batchSize = Integer.parseInt(args[4]);
+        if (batchSize < 1 || batchSize > 100) {
+            System.err.println("batchSize must be between 1 and 100");
+            System.exit(1);
+        }
         String baseUrl = System.getenv("DXR_BASE_URL");
         String apiKey = System.getenv("DXR_API_KEY");
         if (baseUrl == null || apiKey == null) {
             System.err.println("DXR_BASE_URL and DXR_API_KEY environment variables are required");
             System.exit(1);
         }
-        Path file = Paths.get("samples/sample.txt");
+        List<Path> allFiles = IntStream.rangeClosed(1, 100)
+                .mapToObj(i -> Paths.get("samples/sample" + i + ".txt"))
+                .collect(Collectors.toList());
         DxrClient client = new DxrClient(baseUrl, apiKey);
 
         ExecutorService executor = Executors.newFixedThreadPool(datasourceCount,
@@ -39,7 +48,11 @@ public class SpeedCheckApp {
         List<Future<Long>> futures = new ArrayList<>();
         for (int i = 0; i < count; i++) {
             Thread.sleep(delayBetweenJobsMs); // simulate some delay in jobs
-            futures.add(executor.submit(new JobTask(client, file)));
+            List<Path> batch = new ArrayList<>();
+            for (int j = 0; j < batchSize; j++) {
+                batch.add(allFiles.get((i * batchSize + j) % allFiles.size()));
+            }
+            futures.add(executor.submit(new JobTask(client, batch)));
         }
         // wait for tasks
         long totalLatency = 0;

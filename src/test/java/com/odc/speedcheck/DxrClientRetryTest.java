@@ -20,7 +20,7 @@ public class DxrClientRetryTest {
             server.start();
             String baseUrl = server.url("/").toString().replaceAll("/$", "");
             DxrClient client = new DxrClient(baseUrl, "key");
-            String id = client.submitJob(1, Path.of("samples/sample.txt"));
+            String id = client.submitJob(1, List.of(Path.of("samples/sample.txt")));
             assertEquals("job1", id);
             assertEquals(3, server.getRequestCount());
         }
