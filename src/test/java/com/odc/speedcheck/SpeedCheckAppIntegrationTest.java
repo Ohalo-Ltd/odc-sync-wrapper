@@ -64,8 +64,9 @@ public class SpeedCheckAppIntegrationTest {
             assertEquals(0, exit, output);
             assertTrue(output.contains("file:samples/sample1.txt completed with state FINISHED and tag_ids:1"), output);
             assertTrue(output.contains("All jobs completed"), output);
+            assertTrue(output.contains("Total files"), output);
             assertTrue(output.contains("Average latency"), output);
-            assertTrue(output.contains("Throughput"), output);
+            assertTrue(output.contains("files/second"), output);
         }
     }
 }

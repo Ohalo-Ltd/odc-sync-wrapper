@@ -63,10 +63,12 @@ public class SpeedCheckApp {
         Instant end = Instant.now();
         Duration elapsed = Duration.between(start, end);
         double avgLatencySec = (double) totalLatency / count / 1000.0;
-        double throughput = count / (elapsed.toMillis() / 1000.0);
+        int totalFiles = count * batchSize;
+        double fileThroughput = totalFiles / (elapsed.toMillis() / 1000.0);
         System.out.printf("All jobs completed in %d seconds.%n", elapsed.toSeconds());
+        System.out.printf("Total files %d%n", totalFiles);
         System.out.printf("Average latency %.2f seconds%n", avgLatencySec);
-        System.out.printf("Throughput %.2f jobs/second%n", throughput);
+        System.out.printf("Throughput %.2f files/second%n", fileThroughput);
     }
 
     private static class DatasourceThreadFactory implements ThreadFactory {

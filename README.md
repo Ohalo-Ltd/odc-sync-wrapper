@@ -15,6 +15,15 @@ java -jar target/odc-speed-check-0.1.0-SNAPSHOT.jar <jobCount> <timeInBetweenJob
 
 So `java -jar target/odc-speed-check-0.1.0-SNAPSHOT.jar 100 1000 200 10 5` will send 100 jobs, 1 every second, to datasources with ids 200 to 210. Each job will include 5 files and it will use a fixed pool so each datasource will probably get 10 jobs each.
 
+At the end you will see a summary similar to:
+
+```
+All jobs completed in 125 seconds.
+Total files 500
+Average latency 11.57 seconds
+Throughput 4.00 files/second
+```
+
 
 ## Initializing the DXR
 
