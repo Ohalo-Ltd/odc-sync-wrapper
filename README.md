@@ -27,7 +27,7 @@ You can initialize datasources in bulk using the following:
 
 ```
 for i in {1..200}; do
-  curl -X 'POST' \
+  curl -k -X 'POST' \
     "${DXR_BASE_URL}/datasources/with-attributes" \
     -H "Authorization: Bearer ${DXR_API_KEY}" \
     -H "Content-Type: application/json" \
