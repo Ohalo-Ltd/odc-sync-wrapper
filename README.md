@@ -10,10 +10,19 @@ Run the application with:
 
 ```
 mvn package
-java -jar target/odc-speed-check-0.1.0-SNAPSHOT.jar <jobCount> <timeInBetweenJobs> <firstDatasourceId> <datasourceCount>
+java -jar target/odc-speed-check-0.1.0-SNAPSHOT.jar <fileCount> <batchSize> <timeInBetweenJobs> <firstDatasourceId> <datasourceCount>
 ```
 
-So `java -jar target/odc-speed-check-0.1.0-SNAPSHOT.jar 100 1000 200 10` will send 100 jobs, 1 every second, to datasources with ids 200 to 210. It will use a fixed pool to send the jobs so each datasource will probably get 10 jobs each.
+So `java -jar target/odc-speed-check-0.1.0-SNAPSHOT.jar 500 5 1000 200 10` will send 500 files total, 5 per job, to datasources with ids 200 to 210. It will create 100 jobs in total and use a fixed pool so each datasource will probably get 10 jobs each.
+
+At the end you will see a summary similar to:
+
+```
+All jobs completed in 125 seconds.
+Total files 500
+Average latency 11.57 seconds
+Throughput 4.00 files/second
+```
 
 
 ## Initializing the DXR

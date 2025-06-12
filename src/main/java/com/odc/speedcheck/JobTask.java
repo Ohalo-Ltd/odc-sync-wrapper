@@ -2,6 +2,7 @@ package com.odc.speedcheck;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -9,11 +10,11 @@ import java.util.concurrent.Callable;
 
 class JobTask implements Callable<Long> {
     private final DxrClient client;
-    private final Path file;
+    private final List<Path> files;
 
-    JobTask(DxrClient client, Path file) {
+    JobTask(DxrClient client, List<Path> files) {
         this.client = client;
-        this.file = file;
+        this.files = files;
     }
 
     @Override
@@ -25,7 +26,7 @@ class JobTask implements Callable<Long> {
         }
         Instant start = Instant.now();
         try {
-            String jobId = client.submitJob(dsId, file);
+            String jobId = client.submitJob(dsId, files);
             DxrClient.JobStatus status;
             do {
                 Thread.sleep(1000);
@@ -34,7 +35,10 @@ class JobTask implements Callable<Long> {
             if ("FINISHED".equals(status.state())) {
                 java.util.List<String> tags = client.getTagIds(status.datasourceScanId());
                 String tagStr = String.join(",", tags);
-                System.out.printf("%s Thread %s job %s complete with state %s and tag_ids:%s%n", java.time.Instant.now(), Thread.currentThread().getName(), jobId, status.state(), tagStr);
+                for (Path p : files) {
+                    System.out.printf("%s Thread %s job %s file:%s completed with state %s and tag_ids:%s%n",
+                            java.time.Instant.now(), Thread.currentThread().getName(), jobId, p.toString(), status.state(), tagStr);
+                }
             } else {
                 System.out.printf("%s Thread %s job %s complete with state %s%n", java.time.Instant.now(), Thread.currentThread().getName(), jobId, status.state());
             }
