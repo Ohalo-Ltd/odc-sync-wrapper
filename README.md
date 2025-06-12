@@ -1,16 +1,45 @@
 # odc-speed-check
 
-## Building
+## Building and running speed test
 
 This project uses Maven. Ensure `DXR_BASE_URL` and `DXR_API_KEY` environment variables are set.
 Run the application with:
 
 ```
 mvn package
-java -jar target/odc-speed-check-0.1.0-SNAPSHOT.jar <count> <firstDatasourceId> <datasourceCount>
+java -jar target/odc-speed-check-0.1.0-SNAPSHOT.jar <jobCount> <timeInBetweenJobs> <firstDatasourceId> <datasourceCount>
 ```
 
-### Live Integration Test
+So `java -jar target/odc-speed-check-0.1.0-SNAPSHOT.jar 100 1000 200 10` will send 100 jobs, 1 every second, to datasources with ids 200 to 210. It will use a fixed pool to send the jobs so each datasource will probably get 10 jobs each.
+
+
+## Initializing the DXR
+
+
+### Create your on-demand classifiers
+
+The DXR server must have the on demand classifier datasources created. Create one on-demand classifier per concurrency that you would like to have.
+
+You can initialize datasources in bulk using the following:
+
+```
+for i in {1..200}; do
+  curl -X 'POST' \
+    "${DXR_BASE_URL}/datasources/with-attributes" \
+    -H "Authorization: Bearer ${DXR_API_KEY}" \
+    -H "Content-Type: application/json" \
+    -d '{"name":"odc-xxx","datasourceConnectorTypeId":21,"status":"ENABLED","datasourceAttributesDTOList":[{"datasourceConnectorTypeAttributeId":93,"value":""}]}'
+done
+```
+
+In the UI, 
+1. (optional) create a setting profile and then bulk-add all 200 datasources to the settings profile if you need to change the annotators
+2. (optional) create a smart label of the on-demand classifier if you need to see tags.
+
+
+# More information
+
+## Live Integration Test
 
 An additional test hits a real Data X-Ray server using the `DXR_BASE_URL` and
 `DXR_API_KEY` environment variables. It is skipped unless the
@@ -35,29 +64,5 @@ The application calls the Data X-Ray API at two endpoints:
    - Uses the same authorization header.
    - Responds with JSON containing a `state` field. The job is finished when
      this value is `FINISHED`.
-
-
-
-# Testing DXR configurations
-
-## Initializing the DXR
-
-
-### Create your on-demand classifiers
-
-The DXR server must have the on demand classifier datasources created. Create one on-demand classifier per concurrency that you would like to have.
-
-You can initialize datasources in bulk using the following
-
-```
-for i in {1..197}; do
-  curl -X 'POST' \
-    "${DXR_BASE_URL}/datasources/with-attributes" \
-    -H "Authorization: Bearer ${DXR_API_KEY}" \
-    -H "Content-Type: application/json" \
-    -d '{"name":"odc-xxx","datasourceConnectorTypeId":21,"status":"ENABLED","datasourceAttributesDTOList":[{"datasourceConnectorTypeAttributeId":93,"value":""}]}'
-done
-```
-
-In the UI, create a setting profile and then bulk-add all 200 datasources to the settings profile.
-
+3. **Search**
+   - Used to pull back the label of the file that was submitted.
