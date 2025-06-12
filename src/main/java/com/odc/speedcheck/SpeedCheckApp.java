@@ -18,14 +18,14 @@ public class SpeedCheckApp {
 
     public static void main(String[] args) throws Exception {
         if (args.length != 5) {
-            System.err.println("Usage: java -jar odc-speed-check.jar <jobcount> <delayBetweenJobsMs> <firstDatasourceId> <datasourceCount> <batchSize>");
+            System.err.println("Usage: java -jar odc-speed-check.jar <fileCount> <batchSize> <delayBetweenJobsMs> <firstDatasourceId> <datasourceCount>");
             System.exit(1);
         }
-        int count = Integer.parseInt(args[0]);
-        int delayBetweenJobsMs = Integer.parseInt(args[1]);
-        int firstDatasourceId = Integer.parseInt(args[2]);
-        int datasourceCount = Integer.parseInt(args[3]);
-        int batchSize = Integer.parseInt(args[4]);
+        int fileCount = Integer.parseInt(args[0]);
+        int batchSize = Integer.parseInt(args[1]);
+        int delayBetweenJobsMs = Integer.parseInt(args[2]);
+        int firstDatasourceId = Integer.parseInt(args[3]);
+        int datasourceCount = Integer.parseInt(args[4]);
         if (batchSize < 1 || batchSize > 100) {
             System.err.println("batchSize must be between 1 and 100");
             System.exit(1);
@@ -44,13 +44,17 @@ public class SpeedCheckApp {
         ExecutorService executor = Executors.newFixedThreadPool(datasourceCount,
                 new DatasourceThreadFactory(firstDatasourceId));
 
+        int jobCount = (fileCount + batchSize - 1) / batchSize;
+
         Instant start = Instant.now();
         List<Future<Long>> futures = new ArrayList<>();
-        for (int i = 0; i < count; i++) {
+        for (int i = 0; i < jobCount; i++) {
             Thread.sleep(delayBetweenJobsMs); // simulate some delay in jobs
             List<Path> batch = new ArrayList<>();
-            for (int j = 0; j < batchSize; j++) {
-                batch.add(allFiles.get((i * batchSize + j) % allFiles.size()));
+            int startIndex = i * batchSize;
+            int remaining = Math.min(batchSize, fileCount - startIndex);
+            for (int j = 0; j < remaining; j++) {
+                batch.add(allFiles.get((startIndex + j) % allFiles.size()));
             }
             futures.add(executor.submit(new JobTask(client, batch)));
         }
@@ -62,8 +66,8 @@ public class SpeedCheckApp {
         executor.shutdown();
         Instant end = Instant.now();
         Duration elapsed = Duration.between(start, end);
-        double avgLatencySec = (double) totalLatency / count / 1000.0;
-        int totalFiles = count * batchSize;
+        double avgLatencySec = (double) totalLatency / jobCount / 1000.0;
+        int totalFiles = fileCount;
         double fileThroughput = totalFiles / (elapsed.toMillis() / 1000.0);
         System.out.printf("All jobs completed in %d seconds.%n", elapsed.toSeconds());
         System.out.printf("Total files %d%n", totalFiles);
