@@ -37,8 +37,11 @@ public class JobTaskFailedRetryTest {
         try (MockWebServer server = new MockWebServer()) {
             server.enqueue(new MockResponse().setResponseCode(202).setBody("{\"id\":\"job1\"}"));
             server.enqueue(new MockResponse().setResponseCode(200).setBody("{\"state\":\"FAILED\"}"));
+            server.enqueue(new MockResponse().setResponseCode(202).setBody("{\"id\":\"job2\"}"));
             server.enqueue(new MockResponse().setResponseCode(200).setBody("{\"state\":\"FAILED\"}"));
+            server.enqueue(new MockResponse().setResponseCode(202).setBody("{\"id\":\"job3\"}"));
             server.enqueue(new MockResponse().setResponseCode(200).setBody("{\"state\":\"FAILED\"}"));
+            server.enqueue(new MockResponse().setResponseCode(202).setBody("{\"id\":\"job4\"}"));
             server.enqueue(new MockResponse().setResponseCode(200).setBody("{\"state\":\"FAILED\"}"));
             server.start();
             String baseUrl = server.url("/").toString().replaceAll("/$", "");
@@ -48,10 +51,10 @@ public class JobTaskFailedRetryTest {
             task.call();
             String output = out.toString();
             assertTrue(output.contains("job job1 attempt 1 unsuccessful, retrying"), output);
-            assertTrue(output.contains("job job1 attempt 2 unsuccessful, retrying"), output);
-            assertTrue(output.contains("job job1 attempt 3 unsuccessful, retrying"), output);
-            assertTrue(output.contains("job job1 FAILED"), output);
-            assertEquals(5, server.getRequestCount());
+            assertTrue(output.contains("job job2 attempt 2 unsuccessful, retrying"), output);
+            assertTrue(output.contains("job job3 attempt 3 unsuccessful, retrying"), output);
+            assertTrue(output.contains("job job4 FAILED"), output);
+            assertEquals(8, server.getRequestCount());
         }
     }
 }

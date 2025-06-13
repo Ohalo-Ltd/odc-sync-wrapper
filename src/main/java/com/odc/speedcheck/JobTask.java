@@ -29,24 +29,26 @@ class JobTask implements Callable<Long> {
         }
         Instant start = Instant.now();
         try {
-            String jobId = client.submitJob(dsId, files);
+            int attempts = 0;
+            String jobId;
             DxrClient.JobStatus status;
             do {
-                Thread.sleep(1000);
-                status = client.getJobStatus(dsId, jobId);
-            } while (!"FINISHED".equals(status.state()) && !"FAILED".equals(status.state()));
-
-            int attempts = 0;
-            while ("FAILED".equals(status.state()) && attempts < FAILED_RETRY_ATTEMPTS) {
+                jobId = client.submitJob(dsId, files);
+                do {
+                    Thread.sleep(1000);
+                    status = client.getJobStatus(dsId, jobId);
+                } while (!"FINISHED".equals(status.state()) && !"FAILED".equals(status.state()));
+                if (!"FAILED".equals(status.state())) {
+                    break;
+                }
+                if (attempts >= FAILED_RETRY_ATTEMPTS) {
+                    break;
+                }
                 attempts++;
                 System.out.printf("%s Thread %s job %s attempt %d unsuccessful, retrying%n",
                         java.time.Instant.now(), Thread.currentThread().getName(), jobId, attempts);
                 Thread.sleep(FAILED_RETRY_BACKOFF_MS);
-                status = client.getJobStatus(dsId, jobId);
-                if (!"FAILED".equals(status.state())) {
-                    break;
-                }
-            }
+            } while (true);
 
             if ("FINISHED".equals(status.state())) {
                 java.util.List<String> tags = client.getTagIds(status.datasourceScanId());
