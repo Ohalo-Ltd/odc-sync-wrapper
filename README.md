@@ -1,5 +1,19 @@
 # odc-speed-check
 
+`odc-speed-check` is a tool to test the latency and throughput of the Data X-Ray on-demand classifiers. It is also an example of how to build a client for production loads. Specifically, it is built using three different technicques that should be used in production environments with heavy loads:
+1. **Client-side retries:** Every API call uses retries, with a backoff function. There is also 3 retries if the job status returns as FAILED.
+2. **Multi-threading:** Every on-demand classifier inside Data X-Ray is single threaded, so concurrency is achieved by creating multiple on-demand classifiers, and distributing load to these on-demand classifiers. In Java, this is easily achieved using a `FixedThreadPool`.
+3. **Batching:** Uploading 10 files per second is perhaps the most intensive part of the process and batching will allow the server to handle many more files. If you are expecting to upload multpile files per second, it is highly recommended to collect these files in a batch, and then only send them together in one batch for classification, e.g. 1 batch per second.
+
+This tool allows you specify
+1. the total number of files you want to upload
+2. the number of files in a batch job
+3. the wait time in between batches
+4. the datasource id of the first on-demand classifier
+5. the number of on-demand classifiers you are using.
+
+It will use sample files from the `samples/` directory in this repo. When the program completes, you should see a summary of the different results.
+ 
 ## Building and running speed test
 
 This project uses Maven. Ensure `DXR_BASE_URL` and `DXR_API_KEY` environment variables are set.
@@ -13,7 +27,7 @@ mvn package
 java -jar target/odc-speed-check-0.1.0-SNAPSHOT.jar <fileCount> <batchSize> <timeInBetweenJobs> <firstDatasourceId> <datasourceCount>
 ```
 
-So `java -jar target/odc-speed-check-0.1.0-SNAPSHOT.jar 500 5 1000 200 10` will send 500 files total, 5 per job, to datasources with ids 200 to 210. It will create 100 jobs in total and use a fixed pool so each datasource will probably get 10 jobs each.
+So `java -jar target/odc-speed-check-0.1.0-SNAPSHOT.jar 500 5 1000 200 10` will send 500 files total, 5 files per job, with a 1000ms wait in between jobs to datasources with ids 200 to 210. It will create 100 jobs int total across those 10 different datasources. 
 
 At the end you will see a summary similar to:
 
@@ -35,7 +49,7 @@ The DXR server must have the on demand classifier datasources created. Create on
 You can initialize datasources in bulk using the following:
 
 ```
-for i in {1..200}; do
+for i in {1..50}; do
   curl -k -X 'POST' \
     "${DXR_BASE_URL}/datasources/with-attributes" \
     -H "Authorization: Bearer ${DXR_API_KEY}" \
@@ -53,28 +67,24 @@ In the UI,
 
 ## Live Integration Test
 
-An additional test hits a real Data X-Ray server using the `DXR_BASE_URL` and
-`DXR_API_KEY` environment variables. It is skipped unless the
-`RUN_LIVE_TESTS` environment variable is set to `true`. Run it manually with:
+An additional test hits a real Data X-Ray server using the `DXR_BASE_URL` and `DXR_API_KEY` environment variables. It is skipped unless the `RUN_LIVE_TESTS` environment variable is set to `true`. Run it manually with:
 
 ```
 RUN_LIVE_TESTS=true mvn -Dtest=SpeedCheckAppLiveServerTest test
 ```
 
-## API Endpoints
+## Data X-Ray API Endpoints used.
 
-The application calls the Data X-Ray API at two endpoints:
+The application calls the Data X-Ray API at three endpoints:
 
 1. **Submit Job**
    - `POST {DXR_BASE_URL}/on-demand-classifiers/{datasource_id}/jobs`
-   - Sends the file as multipart form data under `files` and includes an
-     `Authorization: Bearer {DXR_API_KEY}` header.
+   - Sends the file as multipart form data under `files` and includes an `Authorization: Bearer {DXR_API_KEY}` header.
    - Returns a `202` response containing JSON with an `id` value for the job.
 
 2. **Check Job Status**
    - `GET {DXR_BASE_URL}/on-demand-classifiers/{datasource_id}/jobs/{job_id}`
    - Uses the same authorization header.
-   - Responds with JSON containing a `state` field. The job is finished when
-     this value is `FINISHED`.
+   - Responds with JSON containing a `state` field. The job is finished when this value is `FINISHED`.
 3. **Search**
    - Used to pull back the label of the file that was submitted.
