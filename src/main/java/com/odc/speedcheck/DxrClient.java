@@ -74,13 +74,15 @@ class DxrClient {
         }
     }
 
-    String submitJob(int datasourceId, List<Path> files) throws IOException {
+
+    String submitJob(int datasourceId, List<FileBatchingService.FileData> fileDataList) throws IOException {
 
         MultipartBody.Builder bodyBuilder = new MultipartBody.Builder()
                 .setType(MultipartBody.FORM);
-        for (Path f : files) {
-            RequestBody fileBody = RequestBody.create(f.toFile(), MediaType.parse("text/plain"));
-            bodyBuilder.addFormDataPart("files", f.getFileName().toString(), fileBody);
+        for (FileBatchingService.FileData fileData : fileDataList) {
+            RequestBody fileBody = RequestBody.create(fileData.content(), 
+                MediaType.parse(fileData.contentType() != null ? fileData.contentType() : "text/plain"));
+            bodyBuilder.addFormDataPart("files", fileData.filename(), fileBody);
         }
         RequestBody multipartBody = bodyBuilder.build();
         Request request = new Request.Builder()

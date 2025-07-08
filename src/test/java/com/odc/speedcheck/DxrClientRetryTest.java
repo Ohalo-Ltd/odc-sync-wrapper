@@ -4,7 +4,6 @@ import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import org.junit.jupiter.api.Test;
 
-import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -20,7 +19,9 @@ public class DxrClientRetryTest {
             server.start();
             String baseUrl = server.url("/").toString().replaceAll("/$", "");
             DxrClient client = new DxrClient(baseUrl, "key");
-            String id = client.submitJob(1, List.of(Path.of("samples/sample.txt")));
+            FileBatchingService.FileData fileData = new FileBatchingService.FileData(
+                "sample.txt", "test content".getBytes(), "text/plain");
+            String id = client.submitJob(1, List.of(fileData));
             assertEquals("job1", id);
             assertEquals(3, server.getRequestCount());
         }
