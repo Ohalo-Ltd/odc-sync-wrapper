@@ -1,4 +1,4 @@
-package com.odc.speedcheck;
+package com.odc.syncwrapper;
 
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
@@ -14,7 +14,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-public class JobTaskFailedRetryTest {
+public class BatchJobTaskFailedRetryTest {
     private PrintStream originalOut;
     private ByteArrayOutputStream out;
 
@@ -23,13 +23,13 @@ public class JobTaskFailedRetryTest {
         originalOut = System.out;
         out = new ByteArrayOutputStream();
         System.setOut(new PrintStream(out));
-        JobTask.FAILED_RETRY_BACKOFF_MS = 1;
+        BatchJobTask.FAILED_RETRY_BACKOFF_MS = 1;
     }
 
     @AfterEach
     void tearDown() {
         System.setOut(originalOut);
-        JobTask.FAILED_RETRY_BACKOFF_MS = 10_000L;
+        BatchJobTask.FAILED_RETRY_BACKOFF_MS = 10_000L;
     }
 
     @Test
@@ -47,7 +47,7 @@ public class JobTaskFailedRetryTest {
             String baseUrl = server.url("/").toString().replaceAll("/$", "");
             DxrClient client = new DxrClient(baseUrl, "key");
             DatasourceContext.set(1);
-            JobTask task = new JobTask(client, List.of(Path.of("samples/sample.txt")));
+            BatchJobTask task = new BatchJobTask(client, List.of(Path.of("samples/sample.txt")));
             task.call();
             String output = out.toString();
             assertTrue(output.contains("job job1 attempt 1 unsuccessful, retrying"), output);
