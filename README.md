@@ -1,8 +1,8 @@
-# odc-speed-check
+# odc-sync-wrapper
 
-`odc-speed-check` is a tool to test the latency and throughput of the Data X-Ray on-demand classifiers. It is also an example of how to build a client for production loads. Specifically, it is built using three different technicques that should be used in production environments with heavy loads:
-1. **Client-side retries:** Every API call uses retries, with a backoff function. There is also 3 retries if the job status returns as FAILED.
-2. **Multi-threading:** Every on-demand classifier inside Data X-Ray is single threaded, so concurrency is achieved by creating multiple on-demand classifiers, and distributing load to these on-demand classifiers. In Java, this is easily achieved using a `FixedThreadPool`.
+`odc-sync-wrapper` is a server which provides a synchronous API call for on-demand classification, using the asynchronous API interface of the Data X-Ray. Internally, it uses several different technicals, to optimize the interfaces with Data X-Ray API calls. 
+1. **Client-side retries:** Every internal API call to Data X-Ray uses retries, with a backoff function. There is also 3 retries if the job status returns as FAILED.
+2. **Multi-threading:** Every on-demand classifier inside Data X-Ray is single threaded, so concurrency is achieved by creating multiple on-demand classifiers, and distributing load to these on-demand classifiers. So when this project calls the Data X-Ray API, it does so using a fixed thread pool. In Java, this is easily achieved using a `FixedThreadPool`.
 3. **Batching:** Uploading 10 files per second is perhaps the most intensive part of the process and batching will allow the server to handle many more files. If you are expecting to upload multpile files per second, it is highly recommended to collect these files in a batch, and then only send them together in one batch for classification, e.g. 1 batch per second.
 
 This tool allows you specify
@@ -40,7 +40,6 @@ Throughput 4.00 files/second
 
 
 ## Initializing the DXR
-
 
 ### Create your on-demand classifiers
 
