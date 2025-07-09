@@ -19,6 +19,16 @@ mvn test
 RUN_INTEGRATION_TESTS=true mvn -Dtest=ClassificationServerIntegrationTest test
 ```
 
+### Run Live End-to-End Tests
+```bash
+RUN_LIVE_TESTS=true mvn -Dtest=LiveEndToEndTest test
+```
+
+This test uploads 6 sample files simultaneously to test the real batching functionality against the live Data X-Ray API. It requires:
+- `DXR_API_KEY` environment variable to be set
+- Uses hardcoded test configuration for dev.dataxray.io
+- Tests concurrent file uploads and batching behavior
+
 ### Run Application as Server
 ```bash
 java -jar target/odc-sync-wrapper-0.1.0-SNAPSHOT.jar

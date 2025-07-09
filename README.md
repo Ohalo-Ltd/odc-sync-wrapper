@@ -23,11 +23,13 @@ The server is configured via environment variables:
  
 ## Building and Running
 
-This project uses Maven. Build the application with:
+This project uses Maven with Spring Boot. Build the application with:
 
 ```bash
 mvn package
 ```
+
+This creates a fully executable Spring Boot JAR with all dependencies included.
 
 ### Running as Java Application
 
@@ -122,6 +124,20 @@ RUN_INTEGRATION_TESTS=true mvn -Dtest=ClassificationServerIntegrationTest test
 ```
 
 This requires `DXR_BASE_URL` and `DXR_API_KEY` environment variables to be set.
+
+### Live End-to-End Tests
+
+Run comprehensive end-to-end tests with concurrent file uploads:
+
+```bash
+RUN_LIVE_TESTS=true mvn -Dtest=LiveEndToEndTest test
+```
+
+This test:
+- Uploads 6 sample files simultaneously to test batching behavior
+- Uses the live dev.dataxray.io environment
+- Requires only `DXR_API_KEY` environment variable
+- Tests the complete workflow from file upload to classification results
 
 ## Data X-Ray API Endpoints used.
 
