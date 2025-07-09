@@ -48,6 +48,9 @@ class DxrClient {
             OkHttpClient.Builder builder = new OkHttpClient.Builder();
             builder.sslSocketFactory(sslSocketFactory, (X509TrustManager)trustAllCerts[0]);
             builder.hostnameVerifier((hostname, session) -> true);
+            builder.readTimeout(Duration.ofMinutes(5));
+            builder.writeTimeout(Duration.ofMinutes(5));
+            builder.connectTimeout(Duration.ofMinutes(1));
 
             return builder.build();
         } catch (Exception e) {

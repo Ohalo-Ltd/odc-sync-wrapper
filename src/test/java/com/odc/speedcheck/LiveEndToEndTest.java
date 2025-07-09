@@ -61,8 +61,9 @@ public class LiveEndToEndTest {
         assertNotNull(apiKey, "DXR_API_KEY environment variable must be set for live tests");
         
         httpClient = new OkHttpClient.Builder()
-            .readTimeout(60, TimeUnit.SECONDS)
-            .writeTimeout(60, TimeUnit.SECONDS)
+            .readTimeout(5, TimeUnit.MINUTES)
+            .writeTimeout(5, TimeUnit.MINUTES)
+            .connectTimeout(1, TimeUnit.MINUTES)
             .build();
         
         baseUrl = "http://localhost:" + port;
@@ -96,7 +97,7 @@ public class LiveEndToEndTest {
             
             // Wait for all uploads to complete
             System.out.println("Waiting for all 6 concurrent uploads to complete...");
-            CompletableFuture.allOf(futures).get(120, TimeUnit.SECONDS);
+            CompletableFuture.allOf(futures).get(6, TimeUnit.MINUTES);
             
             // Verify all results
             for (int i = 0; i < 6; i++) {
@@ -122,7 +123,7 @@ public class LiveEndToEndTest {
             
         } finally {
             executor.shutdown();
-            if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
+            if (!executor.awaitTermination(30, TimeUnit.SECONDS)) {
                 executor.shutdownNow();
             }
         }

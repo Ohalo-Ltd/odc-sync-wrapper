@@ -31,7 +31,12 @@ public class ClassificationServerApp {
         for (String envVar : requiredEnvVars) {
             String value = System.getenv(envVar);
             if (value == null) {
-                System.err.println("Required environment variable " + envVar + " is not set");
+                if ("DXR_API_KEY".equals(envVar)) {
+                    System.err.println("ERROR: DXR_API_KEY environment variable is not set!");
+                    System.err.println("Please set your Data X-Ray API key: export DXR_API_KEY=\"your-api-key-here\"");
+                } else {
+                    System.err.println("Required environment variable " + envVar + " is not set");
+                }
                 System.exit(1);
             }
             

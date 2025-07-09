@@ -3,6 +3,7 @@ package com.odc.speedcheck;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import jakarta.annotation.PostConstruct;
 
 import java.io.IOException;
 import java.util.*;
@@ -43,7 +44,16 @@ public class FileBatchingService {
 
     private DxrClient dxrClient;
 
+    @PostConstruct
     public void initialize() {
+        // Print first 40 characters of DXR_API_KEY for verification
+        if (apiKey != null) {
+            String preview = apiKey.length() > 40 ? apiKey.substring(0, 40) + "..." : apiKey;
+            System.out.println("DXR_API_KEY (first 40 chars): " + preview);
+        } else {
+            System.err.println("ERROR: DXR_API_KEY is not set!");
+        }
+        
         this.dxrClient = new DxrClient(baseUrl, apiKey);
         this.datasourceIdCounter.set(firstDatasourceId);
     }
