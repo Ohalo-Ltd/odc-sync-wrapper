@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.DynamicPropertyRegistry;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -26,14 +28,21 @@ import static org.junit.jupiter.api.Assertions.*;
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT
 )
 @TestPropertySource(properties = {
-    "DXR_BASE_URL=https://dev.dataxray.io/api",
-    "DXR_API_KEY=dummy-key-for-testing",
-    "DXR_FIRST_ODC_DATASOURCE_ID=22096",
+    "DXR_BASE_URL=https://demo.dataxray.io/api",
+    "DXR_FIRST_ODC_DATASOURCE_ID=290",
     "DXR_ODC_DATASOURCE_COUNT=2",
     "DXR_MAX_BATCH_SIZE=2",
     "DXR_BATCH_INTERVAL_SEC=1"
 })
 public class LiveEndToEndTest {
+
+    @DynamicPropertySource
+    static void setDynamicProperties(DynamicPropertyRegistry registry) {
+        String apiKey = System.getenv("DXR_API_KEY");
+        if (apiKey != null) {
+            registry.add("DXR_API_KEY", () -> apiKey);
+        }
+    }
 
     @LocalServerPort
     private int port;
@@ -77,7 +86,8 @@ public class LiveEndToEndTest {
                 final int fileIndex = i;
                 futures[i] = CompletableFuture.supplyAsync(() -> {
                     try {
-                        return uploadFile(sampleFiles.get(fileIndex), "test-file-" + fileIndex + ".txt");
+                        Path sampleFile = sampleFiles.get(fileIndex);
+                        return uploadFile(sampleFile, sampleFile.getFileName().toString());
                     } catch (Exception e) {
                         throw new RuntimeException("Failed to upload file " + fileIndex, e);
                     }
@@ -98,7 +108,7 @@ public class LiveEndToEndTest {
                 assertNotNull(result, "Upload result should not be null for file " + i);
                 assertTrue(result.success, "Upload should succeed for file " + i + ": " + result.error);
                 assertNotNull(result.filename, "Filename should not be null for file " + i);
-                assertTrue(result.filename.startsWith("test-file-" + i), "Filename should match for file " + i);
+                assertTrue(result.filename.equals("sample" + (i + 1) + ".txt"), "Filename should match for file " + i);
                 
                 // Check if the classification was successful
                 if ("FINISHED".equals(result.status)) {
@@ -119,24 +129,17 @@ public class LiveEndToEndTest {
     }
 
     private List<Path> createSampleFiles() throws IOException {
-        String[] sampleContents = {
-            "This is a sample document containing personal information like John Doe and SSN 123-45-6789.",
-            "Medical record: Patient has diabetes and takes insulin daily. DOB: 01/15/1980.",
-            "Financial statement: Account balance is $50,000. Credit card: 4111-1111-1111-1111.",
-            "Employee data: John Smith, employee ID 12345, salary $75,000, phone 555-123-4567.",
-            "Legal document: This contract is between ABC Corp and XYZ Inc. Signed on 2023-12-01.",
-            "Technical specifications: Server IP 192.168.1.100, database credentials user:admin pass:secret123."
-        };
-        
         List<Path> files = new java.util.ArrayList<>();
+        Path samplesDir = Path.of("samples");
         
-        for (int i = 0; i < 6; i++) {
-            Path tempFile = Files.createTempFile("live-test-" + i, ".txt");
-            Files.write(tempFile, sampleContents[i].getBytes());
-            files.add(tempFile);
-            
-            // Register for cleanup
-            tempFile.toFile().deleteOnExit();
+        // Use the first 6 sample files from the samples directory
+        for (int i = 1; i <= 6; i++) {
+            Path sampleFile = samplesDir.resolve("sample" + i + ".txt");
+            if (Files.exists(sampleFile)) {
+                files.add(sampleFile);
+            } else {
+                throw new IOException("Sample file not found: " + sampleFile);
+            }
         }
         
         return files;

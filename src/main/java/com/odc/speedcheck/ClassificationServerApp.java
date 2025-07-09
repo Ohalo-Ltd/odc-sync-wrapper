@@ -29,9 +29,16 @@ public class ClassificationServerApp {
         };
         
         for (String envVar : requiredEnvVars) {
-            if (System.getenv(envVar) == null) {
+            String value = System.getenv(envVar);
+            if (value == null) {
                 System.err.println("Required environment variable " + envVar + " is not set");
                 System.exit(1);
+            }
+            
+            // Print first 40 characters of DXR_API_KEY for verification
+            if ("DXR_API_KEY".equals(envVar)) {
+                String preview = value.length() > 40 ? value.substring(0, 40) + "..." : value;
+                System.out.println("DXR_API_KEY (first 40 chars): " + preview);
             }
         }
     }
