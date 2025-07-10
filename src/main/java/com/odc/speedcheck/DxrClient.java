@@ -7,7 +7,6 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.IOException;
-import java.nio.file.Path;
 import java.util.List;
 
 import javax.net.ssl.SSLContext;
@@ -48,6 +47,9 @@ class DxrClient {
             OkHttpClient.Builder builder = new OkHttpClient.Builder();
             builder.sslSocketFactory(sslSocketFactory, (X509TrustManager)trustAllCerts[0]);
             builder.hostnameVerifier((hostname, session) -> true);
+            builder.readTimeout(Duration.ofMinutes(5));
+            builder.writeTimeout(Duration.ofMinutes(5));
+            builder.connectTimeout(Duration.ofMinutes(1));
 
             return builder.build();
         } catch (Exception e) {
@@ -74,13 +76,15 @@ class DxrClient {
         }
     }
 
-    String submitJob(int datasourceId, List<Path> files) throws IOException {
+
+    String submitJob(int datasourceId, List<FileBatchingService.FileData> fileDataList) throws IOException {
 
         MultipartBody.Builder bodyBuilder = new MultipartBody.Builder()
                 .setType(MultipartBody.FORM);
-        for (Path f : files) {
-            RequestBody fileBody = RequestBody.create(f.toFile(), MediaType.parse("text/plain"));
-            bodyBuilder.addFormDataPart("files", f.getFileName().toString(), fileBody);
+        for (FileBatchingService.FileData fileData : fileDataList) {
+            RequestBody fileBody = RequestBody.create(fileData.content(), 
+                MediaType.parse(fileData.contentType() != null ? fileData.contentType() : "text/plain"));
+            bodyBuilder.addFormDataPart("files", fileData.enhancedFilename(), fileBody);
         }
         RequestBody multipartBody = bodyBuilder.build();
         Request request = new Request.Builder()
