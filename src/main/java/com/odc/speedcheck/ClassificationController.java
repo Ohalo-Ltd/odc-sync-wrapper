@@ -1,5 +1,7 @@
 package com.odc.speedcheck;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -11,13 +13,19 @@ import java.util.concurrent.TimeUnit;
 
 @RestController
 public class ClassificationController {
+    
+    private static final Logger logger = LoggerFactory.getLogger(ClassificationController.class);
 
     @Autowired
     private FileBatchingService fileBatchingService;
 
     @PostMapping("/classify-file")
     public ResponseEntity<FileBatchingService.FileClassificationResult> classifyFile(
-            @RequestParam("file") MultipartFile file) {
+            @RequestParam("file") MultipartFile file,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        
+        logger.info("Received file for classification: {} (size: {} bytes)", 
+                   file.getOriginalFilename(), file.getSize());
         
         if (file.isEmpty()) {
             return ResponseEntity.badRequest().body(
@@ -29,9 +37,14 @@ public class ClassificationController {
             );
         }
 
+        String apiKey = null;
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            apiKey = authHeader.substring(7);
+        }
+
         try {
             CompletableFuture<FileBatchingService.FileClassificationResult> future = 
-                fileBatchingService.processFile(file);
+                fileBatchingService.processFile(file, apiKey);
             
             FileBatchingService.FileClassificationResult result = future.get(300, TimeUnit.SECONDS);
             
