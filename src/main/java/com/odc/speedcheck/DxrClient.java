@@ -7,7 +7,6 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.IOException;
-import java.nio.file.Path;
 import java.util.List;
 
 import javax.net.ssl.SSLContext;
@@ -85,7 +84,7 @@ class DxrClient {
         for (FileBatchingService.FileData fileData : fileDataList) {
             RequestBody fileBody = RequestBody.create(fileData.content(), 
                 MediaType.parse(fileData.contentType() != null ? fileData.contentType() : "text/plain"));
-            bodyBuilder.addFormDataPart("files", fileData.filename(), fileBody);
+            bodyBuilder.addFormDataPart("files", fileData.enhancedFilename(), fileBody);
         }
         RequestBody multipartBody = bodyBuilder.build();
         Request request = new Request.Builder()

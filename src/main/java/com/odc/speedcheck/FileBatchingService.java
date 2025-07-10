@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.UUID;
 
 @Service
 public class FileBatchingService {
@@ -99,8 +100,11 @@ public class FileBatchingService {
                 List<FileData> fileDataList = new ArrayList<>();
                 for (FileRequest request : batch) {
                     try {
+                        String originalFilename = request.file().getOriginalFilename();
+                        String enhancedFilename = createUniqueFilename(originalFilename);
                         FileData fileData = new FileData(
-                            request.file().getOriginalFilename(),
+                            originalFilename,
+                            enhancedFilename,
                             request.file().getBytes(),
                             request.file().getContentType()
                         );
@@ -142,7 +146,7 @@ public class FileBatchingService {
                         FileRequest request = batch.get(i);
                         FileData fileData = fileDataList.get(i);
                         FileClassificationResult result = new FileClassificationResult(
-                            fileData.filename(),
+                            fileData.originalFilename(),
                             "FINISHED",
                             tags
                         );
@@ -176,9 +180,25 @@ public class FileBatchingService {
         return currentValue;
     }
 
+    private String createUniqueFilename(String originalFilename) {
+        String uuid = UUID.randomUUID().toString();
+        if (originalFilename == null || originalFilename.isEmpty()) {
+            return uuid;
+        }
+        
+        int lastDotIndex = originalFilename.lastIndexOf('.');
+        if (lastDotIndex == -1) {
+            return originalFilename + "_" + uuid;
+        } else {
+            String nameWithoutExtension = originalFilename.substring(0, lastDotIndex);
+            String extension = originalFilename.substring(lastDotIndex);
+            return nameWithoutExtension + "_" + uuid + extension;
+        }
+    }
+
     public static record FileRequest(MultipartFile file, CompletableFuture<FileClassificationResult> result) {}
 
-    public static record FileData(String filename, byte[] content, String contentType) {}
+    public static record FileData(String originalFilename, String enhancedFilename, byte[] content, String contentType) {}
 
     public static record FileClassificationResult(String filename, String status, List<String> tags) {}
 }

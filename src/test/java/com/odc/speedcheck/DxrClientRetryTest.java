@@ -20,7 +20,7 @@ public class DxrClientRetryTest {
             String baseUrl = server.url("/").toString().replaceAll("/$", "");
             DxrClient client = new DxrClient(baseUrl, "key");
             FileBatchingService.FileData fileData = new FileBatchingService.FileData(
-                "sample.txt", "test content".getBytes(), "text/plain");
+                "sample.txt", "sample_guid.txt", "test content".getBytes(), "text/plain");
             String id = client.submitJob(1, List.of(fileData));
             assertEquals("job1", id);
             assertEquals(3, server.getRequestCount());
