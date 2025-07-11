@@ -116,7 +116,8 @@ public class FileBatchingService {
                         FileClassificationResult result = new FileClassificationResult(
                             request.file().getOriginalFilename(),
                             "FAILED",
-                            Collections.singletonList("No API key provided")
+                            Collections.singletonList("No API key provided"),
+                            Collections.emptyMap()
                         );
                         request.result().complete(result);
                     }
@@ -170,14 +171,15 @@ public class FileBatchingService {
                 } while (true);
 
                 if ("FINISHED".equals(status.state())) {
-                    List<String> tags = effectiveClient.getTagIds(status.datasourceScanId());
+                    DxrClient.ClassificationData classificationData = effectiveClient.getTagIds(status.datasourceScanId());
                     for (int i = 0; i < batch.size() && i < fileDataList.size(); i++) {
                         FileRequest request = batch.get(i);
                         FileData fileData = fileDataList.get(i);
                         FileClassificationResult result = new FileClassificationResult(
                             fileData.originalFilename(),
                             "FINISHED",
-                            tags
+                            classificationData.tags(),
+                            classificationData.extractedMetadata()
                         );
                         request.result().complete(result);
                     }
@@ -186,7 +188,8 @@ public class FileBatchingService {
                         FileClassificationResult result = new FileClassificationResult(
                             request.file().getOriginalFilename(),
                             "FAILED",
-                            Collections.emptyList()
+                            Collections.emptyList(),
+                            Collections.emptyMap()
                         );
                         request.result().complete(result);
                     }
@@ -229,5 +232,5 @@ public class FileBatchingService {
 
     public static record FileData(String originalFilename, String enhancedFilename, byte[] content, String contentType) {}
 
-    public static record FileClassificationResult(String filename, String status, List<String> tags) {}
+    public static record FileClassificationResult(String filename, String status, List<String> tags, java.util.Map<String, String> extractedMetadata) {}
 }

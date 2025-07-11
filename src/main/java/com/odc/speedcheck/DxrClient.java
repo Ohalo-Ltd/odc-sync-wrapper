@@ -22,6 +22,7 @@ import java.time.Duration;
 class DxrClient {
     private static final Logger logger = LoggerFactory.getLogger(DxrClient.class);
     record JobStatus(String state, long datasourceScanId) {}
+    record ClassificationData(java.util.List<String> tags, java.util.Map<String, String> extractedMetadata) {}
 
     private final RetryPolicy<Response> retryPolicy = RetryPolicy.<Response>builder()
             .handle(IOException.class)
@@ -158,7 +159,7 @@ class DxrClient {
         }
     }
 
-    java.util.List<String> getTagIds(long scanId) throws IOException {
+    ClassificationData getTagIds(long scanId) throws IOException {
         JSONObject item = new JSONObject()
                 .put("parameter", "dxr#datasource_scan_id")
                 .put("value", scanId)
@@ -192,7 +193,7 @@ class DxrClient {
                 throw new IOException("Unexpected response: " + response.code() + " " + respBody);
             }
             java.util.List<String> tags = new java.util.ArrayList<>();
-            java.util.List<String> metadataList = new java.util.ArrayList<>();
+            java.util.Map<String, String> extractedMetadata = new java.util.HashMap<>();
 
             JSONObject obj = new JSONObject(respBody);
             JSONObject hits = obj.optJSONObject("hits");
@@ -202,23 +203,34 @@ class DxrClient {
                     for (int i = 0; i < arr.length(); i++) {
                         JSONObject hit = arr.getJSONObject(i);
                         JSONObject src = hit.optJSONObject("_source");
-                        if (src != null && src.has("dxr#tags")) {
-                            JSONArray t = src.getJSONArray("dxr#tags");
-                            for (int j = 0; j < t.length(); j++) {
-                                tags.add(String.valueOf(t.get(j)));
+                        if (src != null) {
+                            // Extract tags
+                            if (src.has("dxr#tags")) {
+                                JSONArray t = src.getJSONArray("dxr#tags");
+                                for (int j = 0; j < t.length(); j++) {
+                                    tags.add(String.valueOf(t.get(j)));
+                                }
                             }
-                        }
-                        if (src != null && src.has("extracted_metadata#1")) {
-                            metadataList.add(src.getString("extracted_metadata#1"));
+                            
+                            // Extract all metadata fields that start with "extracted_metadata#"
+                            for (String key : src.keySet()) {
+                                if (key.startsWith("extracted_metadata#")) {
+                                    Object value = src.get(key);
+                                    if (value != null) {
+                                        extractedMetadata.put(key, String.valueOf(value));
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
-            logger.info("Successfully fetched search results for scan ID {}: {} tags found: {}, extractedMeta: {}",
+            logger.info("Successfully fetched search results for scan ID {}: {} tags found: {}, {} metadata fields: {}",
                 scanId, tags.size(),
                 tags.isEmpty() ? "none" : String.join(", ", tags),
-                metadataList.isEmpty() ? "none" : String.join(", ", metadataList));
-            return tags;
+                extractedMetadata.size(),
+                extractedMetadata.isEmpty() ? "none" : extractedMetadata.keySet().toString());
+            return new ClassificationData(tags, extractedMetadata);
         }
     }
 }

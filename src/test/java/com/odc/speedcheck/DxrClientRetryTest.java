@@ -54,8 +54,8 @@ public class DxrClientRetryTest {
             server.start();
             String baseUrl = server.url("/").toString().replaceAll("/$", "");
             DxrClient client = new DxrClient(baseUrl, "key");
-            List<String> tags = client.getTagIds(1);
-            assertEquals(List.of("A"), tags);
+            DxrClient.ClassificationData data = client.getTagIds(1);
+            assertEquals(List.of("A"), data.tags());
             assertEquals(3, server.getRequestCount());
         }
     }
