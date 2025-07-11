@@ -5,6 +5,8 @@ import dev.failsafe.Failsafe;
 import dev.failsafe.RetryPolicy;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.List;
@@ -18,6 +20,7 @@ import javax.net.ssl.X509TrustManager;
 import java.time.Duration;
 
 class DxrClient {
+    private static final Logger logger = LoggerFactory.getLogger(DxrClient.class);
     record JobStatus(String state, long datasourceScanId) {}
 
     private final RetryPolicy<Response> retryPolicy = RetryPolicy.<Response>builder()
@@ -25,6 +28,28 @@ class DxrClient {
             .handleResultIf(r -> r.code() >= 500)
             .withBackoff(Duration.ofMillis(100), Duration.ofSeconds(1))
             .withMaxAttempts(3)
+            .onRetry(event -> {
+                Throwable lastException = event.getLastException();
+                Response lastResult = event.getLastResult();
+                if (lastException != null) {
+                    logger.warn("Retrying API call due to exception (attempt {}/{}): {}",
+                        event.getAttemptCount(), 3, lastException.getMessage());
+                } else if (lastResult != null) {
+                    logger.warn("Retrying API call due to HTTP error (attempt {}/{}): HTTP {}",
+                        event.getAttemptCount(), 3, lastResult.code());
+                }
+            })
+            .onFailure(event -> {
+                Throwable lastException = event.getException();
+                Response lastResult = event.getResult();
+                if (lastException != null) {
+                    logger.error("API call failed after {} attempts: {}",
+                        event.getAttemptCount(), lastException.getMessage());
+                } else if (lastResult != null) {
+                    logger.error("API call failed after {} attempts: HTTP {}",
+                        event.getAttemptCount(), lastResult.code());
+                }
+            })
             .build();
 
     public static OkHttpClient getUnsafeOkHttpClient() {
@@ -47,9 +72,9 @@ class DxrClient {
             OkHttpClient.Builder builder = new OkHttpClient.Builder();
             builder.sslSocketFactory(sslSocketFactory, (X509TrustManager)trustAllCerts[0]);
             builder.hostnameVerifier((hostname, session) -> true);
-            builder.readTimeout(Duration.ofMinutes(5));
-            builder.writeTimeout(Duration.ofMinutes(5));
-            builder.connectTimeout(Duration.ofMinutes(1));
+            builder.readTimeout(Duration.ofMinutes(20));
+            builder.writeTimeout(Duration.ofMinutes(20));
+            builder.connectTimeout(Duration.ofMinutes(20));
 
             return builder.build();
         } catch (Exception e) {
@@ -82,7 +107,7 @@ class DxrClient {
         MultipartBody.Builder bodyBuilder = new MultipartBody.Builder()
                 .setType(MultipartBody.FORM);
         for (FileBatchingService.FileData fileData : fileDataList) {
-            RequestBody fileBody = RequestBody.create(fileData.content(), 
+            RequestBody fileBody = RequestBody.create(fileData.content(),
                 MediaType.parse(fileData.contentType() != null ? fileData.contentType() : "text/plain"));
             bodyBuilder.addFormDataPart("files", fileData.enhancedFilename(), fileBody);
         }
@@ -167,6 +192,8 @@ class DxrClient {
                 throw new IOException("Unexpected response: " + response.code() + " " + respBody);
             }
             java.util.List<String> tags = new java.util.ArrayList<>();
+            java.util.List<String> metadataList = new java.util.ArrayList<>();
+
             JSONObject obj = new JSONObject(respBody);
             JSONObject hits = obj.optJSONObject("hits");
             if (hits != null) {
@@ -181,9 +208,16 @@ class DxrClient {
                                 tags.add(String.valueOf(t.get(j)));
                             }
                         }
+                        if (src != null && src.has("extracted_metadata#1")) {
+                            metadataList.add(src.getString("extracted_metadata#1"));
+                        }
                     }
                 }
             }
+            logger.info("Successfully fetched search results for scan ID {}: {} tags found: {}, extractedMeta: {}",
+                scanId, tags.size(),
+                tags.isEmpty() ? "none" : String.join(", ", tags),
+                metadataList.isEmpty() ? "none" : String.join(", ", metadataList));
             return tags;
         }
     }
