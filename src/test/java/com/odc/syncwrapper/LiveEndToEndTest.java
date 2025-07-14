@@ -1,4 +1,4 @@
-package com.odc.speedcheck;
+package com.odc.syncwrapper;
 
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;

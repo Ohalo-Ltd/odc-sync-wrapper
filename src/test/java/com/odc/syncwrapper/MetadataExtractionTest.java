@@ -1,4 +1,4 @@
-package com.odc.speedcheck;
+package com.odc.syncwrapper;
 
 import org.junit.jupiter.api.Test;
 import okhttp3.mockwebserver.MockWebServer;

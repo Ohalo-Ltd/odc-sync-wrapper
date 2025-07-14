@@ -1,4 +1,4 @@
-package com.odc.speedcheck;
+package com.odc.syncwrapper;
 
 import okhttp3.*;
 import dev.failsafe.Failsafe;

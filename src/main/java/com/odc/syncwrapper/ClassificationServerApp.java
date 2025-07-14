@@ -1,4 +1,4 @@
-package com.odc.speedcheck;
+package com.odc.syncwrapper;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

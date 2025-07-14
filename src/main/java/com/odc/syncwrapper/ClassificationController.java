@@ -1,4 +1,4 @@
-package com.odc.speedcheck;
+package com.odc.syncwrapper;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

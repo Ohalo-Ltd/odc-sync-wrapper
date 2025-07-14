@@ -1,4 +1,4 @@
-package com.odc.speedcheck;
+package com.odc.syncwrapper;
 
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
@@ -17,7 +17,7 @@ public class ClassificationServerIntegrationTest {
         // Test that server validates environment variables on startup
         ProcessBuilder pb = new ProcessBuilder(
                 "java", "-cp", System.getProperty("java.class.path"),
-                "com.odc.speedcheck.ClassificationServerApp");
+                "com.odc.syncwrapper.ClassificationServerApp");
         pb.redirectErrorStream(true);
         Process process = pb.start();
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -42,7 +42,7 @@ public class ClassificationServerIntegrationTest {
 
         ProcessBuilder pb = new ProcessBuilder(
                 "java", "-cp", System.getProperty("java.class.path"),
-                "com.odc.speedcheck.ClassificationServerApp");
+                "com.odc.syncwrapper.ClassificationServerApp");
         pb.environment().put("DXR_BASE_URL", baseUrl);
         pb.environment().put("DXR_API_KEY", apiKey);
         pb.environment().put("DXR_FIRST_ODC_DATASOURCE_ID", "100");

@@ -1,4 +1,4 @@
-package com.odc.speedcheck;
+package com.odc.syncwrapper;
 
 class DatasourceContext {
     private static final ThreadLocal<Integer> DS = new ThreadLocal<>();

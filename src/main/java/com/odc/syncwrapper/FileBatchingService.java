@@ -1,4 +1,4 @@
-package com.odc.speedcheck;
+package com.odc.syncwrapper;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;

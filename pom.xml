@@ -94,7 +94,7 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>com.odc.speedcheck.ClassificationServerApp</mainClass>
+                            <mainClass>com.odc.syncwrapper.ClassificationServerApp</mainClass>
                         </manifest>
                     </archive>
                 </configuration>
@@ -104,7 +104,7 @@
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <version>3.2.0</version>
                 <configuration>
-                    <mainClass>com.odc.speedcheck.ClassificationServerApp</mainClass>
+                    <mainClass>com.odc.syncwrapper.ClassificationServerApp</mainClass>
                 </configuration>
                 <executions>
                     <execution>
