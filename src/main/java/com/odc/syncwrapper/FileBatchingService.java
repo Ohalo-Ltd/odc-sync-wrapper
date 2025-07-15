@@ -1,4 +1,4 @@
-package com.odc.speedcheck;
+package com.odc.syncwrapper;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -20,7 +20,7 @@ public class FileBatchingService {
     @Value("${DXR_BASE_URL}")
     private String baseUrl;
 
-    @Value("${DXR_API_KEY}")
+    @Value("${DXR_API_KEY:}")
     private String apiKey;
 
     @Value("${DXR_FIRST_ODC_DATASOURCE_ID}")
@@ -43,25 +43,18 @@ public class FileBatchingService {
     private ScheduledFuture<?> batchTimer;
     private final Object batchLock = new Object();
 
-    private DxrClient dxrClient;
-
     @PostConstruct
     public void initialize() {
-        // Print first 40 characters of DXR_API_KEY for verification
-        if (apiKey != null) {
-            String preview = apiKey.length() > 40 ? apiKey.substring(0, 40) + "..." : apiKey;
-            System.out.println("DXR_API_KEY (first 40 chars): " + preview);
-        } else {
-            System.err.println("ERROR: DXR_API_KEY is not set!");
-        }
-        
-        this.dxrClient = new DxrClient(baseUrl, apiKey);
         this.datasourceIdCounter.set(firstDatasourceId);
     }
 
     public CompletableFuture<FileClassificationResult> processFile(MultipartFile file) {
+        return processFile(file, null);
+    }
+
+    public CompletableFuture<FileClassificationResult> processFile(MultipartFile file, String requestApiKey) {
         CompletableFuture<FileClassificationResult> result = new CompletableFuture<>();
-        FileRequest request = new FileRequest(file, result);
+        FileRequest request = new FileRequest(file, result, requestApiKey);
 
         synchronized (batchLock) {
             currentBatch.add(request);
@@ -97,6 +90,34 @@ public class FileBatchingService {
                 int datasourceId = getNextDatasourceId();
                 DatasourceContext.set(datasourceId);
 
+                // Determine which API key to use - prefer request-specific API key over configured one
+                String effectiveApiKey = null;
+                for (FileRequest request : batch) {
+                    if (request.requestApiKey() != null && !request.requestApiKey().isEmpty()) {
+                        effectiveApiKey = request.requestApiKey();
+                        break;
+                    }
+                }
+                if (effectiveApiKey == null) {
+                    effectiveApiKey = apiKey;
+                }
+
+                // If no API key is available, fail all requests
+                if (effectiveApiKey == null || effectiveApiKey.isEmpty()) {
+                    for (FileRequest request : batch) {
+                        FileClassificationResult result = new FileClassificationResult(
+                            request.file().getOriginalFilename(),
+                            "FAILED",
+                            Collections.emptyMap()
+                        );
+                        request.result().complete(result);
+                    }
+                    return;
+                }
+
+                // Create DxrClient with the effective API key
+                DxrClient effectiveClient = new DxrClient(baseUrl, effectiveApiKey);
+
                 List<FileData> fileDataList = new ArrayList<>();
                 for (FileRequest request : batch) {
                     try {
@@ -118,14 +139,14 @@ public class FileBatchingService {
                     return;
                 }
 
-                String jobId = dxrClient.submitJob(datasourceId, fileDataList);
+                String jobId = effectiveClient.submitJob(datasourceId, fileDataList);
 
                 DxrClient.JobStatus status;
                 int attempts = 0;
                 do {
                     do {
                         Thread.sleep(1000);
-                        status = dxrClient.getJobStatus(datasourceId, jobId);
+                        status = effectiveClient.getJobStatus(datasourceId, jobId);
                     } while (!"FINISHED".equals(status.state()) && !"FAILED".equals(status.state()));
 
                     if (!"FAILED".equals(status.state())) {
@@ -137,18 +158,18 @@ public class FileBatchingService {
                     }
                     attempts++;
                     Thread.sleep(FAILED_RETRY_BACKOFF_MS);
-                    jobId = dxrClient.submitJob(datasourceId, fileDataList);
+                    jobId = effectiveClient.submitJob(datasourceId, fileDataList);
                 } while (true);
 
                 if ("FINISHED".equals(status.state())) {
-                    List<String> tags = dxrClient.getTagIds(status.datasourceScanId());
+                    DxrClient.ClassificationData classificationData = effectiveClient.getTagIds(status.datasourceScanId());
                     for (int i = 0; i < batch.size() && i < fileDataList.size(); i++) {
                         FileRequest request = batch.get(i);
                         FileData fileData = fileDataList.get(i);
                         FileClassificationResult result = new FileClassificationResult(
                             fileData.originalFilename(),
                             "FINISHED",
-                            tags
+                            classificationData.extractedMetadata()
                         );
                         request.result().complete(result);
                     }
@@ -157,7 +178,7 @@ public class FileBatchingService {
                         FileClassificationResult result = new FileClassificationResult(
                             request.file().getOriginalFilename(),
                             "FAILED",
-                            Collections.emptyList()
+                            Collections.emptyMap()
                         );
                         request.result().complete(result);
                     }
@@ -196,9 +217,9 @@ public class FileBatchingService {
         }
     }
 
-    public static record FileRequest(MultipartFile file, CompletableFuture<FileClassificationResult> result) {}
+    public static record FileRequest(MultipartFile file, CompletableFuture<FileClassificationResult> result, String requestApiKey) {}
 
     public static record FileData(String originalFilename, String enhancedFilename, byte[] content, String contentType) {}
 
-    public static record FileClassificationResult(String filename, String status, List<String> tags) {}
+    public static record FileClassificationResult(String filename, String status, java.util.Map<String, String> extractedMetadata) {}
 }

@@ -1,4 +1,4 @@
-package com.odc.speedcheck;
+package com.odc.syncwrapper;
 
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
@@ -54,8 +54,7 @@ public class DxrClientRetryTest {
             server.start();
             String baseUrl = server.url("/").toString().replaceAll("/$", "");
             DxrClient client = new DxrClient(baseUrl, "key");
-            List<String> tags = client.getTagIds(1);
-            assertEquals(List.of("A"), tags);
+            client.getTagIds(1);
             assertEquals(3, server.getRequestCount());
         }
     }

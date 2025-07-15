@@ -1,0 +1,287 @@
+#!/usr/bin/env python3
+"""
+Performance Load Test Script for ODC Sync Wrapper API
+Usage: python load-test.py --files-per-second X --duration Y [--server-url URL]
+"""
+
+import argparse
+import asyncio
+import aiohttp
+import aiofiles
+import time
+import statistics
+import sys
+import os
+from pathlib import Path
+from dataclasses import dataclass
+from typing import List, Optional
+import logging
+
+@dataclass
+class TestResult:
+    total_requests: int
+    successful_requests: int
+    failed_requests: int
+    avg_latency_ms: float
+    min_latency_ms: float
+    max_latency_ms: float
+    p95_latency_ms: float
+    p99_latency_ms: float
+    throughput_rps: float
+    error_rate: float
+
+class LoadTester:
+    def __init__(self, server_url: str, files_per_second: int, duration: int, samples_dir: str):
+        self.server_url = server_url
+        self.files_per_second = files_per_second
+        self.duration = duration
+        self.samples_dir = Path(samples_dir)
+        self.sample_files = []
+        self.results = []
+        self.start_time = None
+        
+        # Setup logging
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+        self.logger = logging.getLogger(__name__)
+        
+    async def load_sample_files(self):
+        """Load all sample files into memory"""
+        sample_files = list(self.samples_dir.glob("sample*.txt"))
+        if not sample_files:
+            raise FileNotFoundError(f"No sample files found in {self.samples_dir}")
+        
+        self.logger.info(f"Loading {len(sample_files)} sample files")
+        
+        for file_path in sample_files:
+            async with aiofiles.open(file_path, 'rb') as f:
+                content = await f.read()
+                self.sample_files.append((file_path.name, content))
+        
+        self.logger.info(f"Loaded {len(self.sample_files)} sample files")
+    
+    async def send_file_request(self, session: aiohttp.ClientSession, file_name: str, file_content: bytes) -> dict:
+        """Send a single file classification request"""
+        start_time = time.time()
+        
+        try:
+            data = aiohttp.FormData()
+            data.add_field('file', file_content, filename=file_name, content_type='text/plain')
+            
+            async with session.post(f"{self.server_url}/classify-file", data=data) as response:
+                end_time = time.time()
+                latency_ms = (end_time - start_time) * 1000
+                
+                result = {
+                    'status_code': response.status,
+                    'latency_ms': latency_ms,
+                    'success': response.status == 200,
+                    'timestamp': start_time,
+                    'file_name': file_name
+                }
+                
+                if response.status != 200:
+                    result['error'] = await response.text()
+                
+                return result
+                
+        except Exception as e:
+            end_time = time.time()
+            latency_ms = (end_time - start_time) * 1000
+            return {
+                'status_code': 0,
+                'latency_ms': latency_ms,
+                'success': False,
+                'timestamp': start_time,
+                'file_name': file_name,
+                'error': str(e)
+            }
+    
+    async def send_request_at_rate(self, session: aiohttp.ClientSession, file_name: str, file_content: bytes):
+        """Send a request directly to the server and store result"""
+        result = await self.send_file_request(session, file_name, file_content)
+        self.results.append(result)
+    
+    async def run_load_test(self) -> TestResult:
+        """Run the load test"""
+        await self.load_sample_files()
+        
+        # Calculate timing
+        request_interval = 1.0 / self.files_per_second
+        total_requests = self.files_per_second * self.duration
+        
+        self.logger.info(f"Starting load test:")
+        self.logger.info(f"  Target: {self.files_per_second} files/second for {self.duration} seconds")
+        self.logger.info(f"  Total requests: {total_requests}")
+        self.logger.info(f"  Request interval: {request_interval:.3f}s")
+        
+        # Setup HTTP session
+        timeout = aiohttp.ClientTimeout(total=1200)  # 20 minute timeout
+        connector = aiohttp.TCPConnector(limit=200, limit_per_host=200)
+        
+        async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+            # Start the test
+            self.start_time = time.time()
+            file_index = 0
+            tasks = []
+            
+            try:
+                for i in range(total_requests):
+                    # Cycle through sample files
+                    file_name, file_content = self.sample_files[file_index % len(self.sample_files)]
+                    file_index += 1
+                    
+                    # Send request directly to server (no queuing)
+                    task = asyncio.create_task(
+                        self.send_request_at_rate(session, file_name, file_content)
+                    )
+                    tasks.append(task)
+                    
+                    # Wait for next request time
+                    if i < total_requests - 1:  # Don't wait after the last request
+                        await asyncio.sleep(request_interval)
+                    
+                    # Progress logging
+                    if (i + 1) % (self.files_per_second * 10) == 0:
+                        elapsed = time.time() - self.start_time
+                        self.logger.info(f"Sent {i + 1}/{total_requests} requests ({elapsed:.1f}s elapsed)")
+                
+                # Wait for all requests to complete
+                self.logger.info("Waiting for all requests to complete...")
+                await asyncio.gather(*tasks, return_exceptions=True)
+                
+            except Exception as e:
+                self.logger.error(f"Error during load test: {e}")
+                # Cancel remaining tasks
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                raise
+        
+        # Calculate results
+        return self.calculate_results()
+    
+    def calculate_results(self) -> TestResult:
+        """Calculate test results from collected data"""
+        if not self.results:
+            raise ValueError("No results to calculate")
+        
+        total_requests = len(self.results)
+        successful_requests = sum(1 for r in self.results if r['success'])
+        failed_requests = total_requests - successful_requests
+        
+        # Calculate latencies
+        latencies = [r['latency_ms'] for r in self.results]
+        avg_latency = statistics.mean(latencies)
+        min_latency = min(latencies)
+        max_latency = max(latencies)
+        
+        # Calculate percentiles
+        sorted_latencies = sorted(latencies)
+        p95_latency = sorted_latencies[int(0.95 * len(sorted_latencies))]
+        p99_latency = sorted_latencies[int(0.99 * len(sorted_latencies))]
+        
+        # Calculate throughput
+        if self.results:
+            test_duration = max(r['timestamp'] for r in self.results) - min(r['timestamp'] for r in self.results)
+            throughput = total_requests / test_duration if test_duration > 0 else 0
+        else:
+            throughput = 0
+        
+        error_rate = (failed_requests / total_requests) * 100
+        
+        return TestResult(
+            total_requests=total_requests,
+            successful_requests=successful_requests,
+            failed_requests=failed_requests,
+            avg_latency_ms=avg_latency,
+            min_latency_ms=min_latency,
+            max_latency_ms=max_latency,
+            p95_latency_ms=p95_latency,
+            p99_latency_ms=p99_latency,
+            throughput_rps=throughput,
+            error_rate=error_rate
+        )
+    
+    def print_results(self, result: TestResult):
+        """Print test results in a formatted way"""
+        print("\n" + "="*60)
+        print("LOAD TEST RESULTS")
+        print("="*60)
+        print(f"Total Requests:      {result.total_requests}")
+        print(f"Successful Requests: {result.successful_requests}")
+        print(f"Failed Requests:     {result.failed_requests}")
+        print(f"Error Rate:          {result.error_rate:.2f}%")
+        print()
+        print("LATENCY STATISTICS (ms)")
+        print("-"*30)
+        print(f"Average:             {result.avg_latency_ms:.2f}")
+        print(f"Minimum:             {result.min_latency_ms:.2f}")
+        print(f"Maximum:             {result.max_latency_ms:.2f}")
+        print(f"95th Percentile:     {result.p95_latency_ms:.2f}")
+        print(f"99th Percentile:     {result.p99_latency_ms:.2f}")
+        print()
+        print("THROUGHPUT")
+        print("-"*30)
+        print(f"Actual Throughput:   {result.throughput_rps:.2f} requests/second")
+        print("="*60)
+        
+        # Print error details if any
+        if result.failed_requests > 0:
+            print("\nERROR SUMMARY")
+            print("-"*30)
+            error_counts = {}
+            for r in self.results:
+                if not r['success']:
+                    error_type = r.get('error', f"HTTP {r['status_code']}")
+                    error_counts[error_type] = error_counts.get(error_type, 0) + 1
+            
+            for error, count in error_counts.items():
+                print(f"{error}: {count} occurrences")
+
+
+async def main():
+    parser = argparse.ArgumentParser(description='Performance Load Test for ODC Sync Wrapper API')
+    parser.add_argument('--files-per-second', type=int, required=True, 
+                        help='Number of files to send per second')
+    parser.add_argument('--duration', type=int, required=True, 
+                        help='Test duration in seconds')
+    parser.add_argument('--server-url', type=str, default='http://localhost:8844', 
+                        help='Server URL (default: http://localhost:8844)')
+    parser.add_argument('--samples-dir', type=str, default='samples', 
+                        help='Directory containing sample files (default: samples)')
+    
+    args = parser.parse_args()
+    
+    # Validate arguments
+    if args.files_per_second <= 0:
+        print("Error: files-per-second must be positive")
+        sys.exit(1)
+    
+    if args.duration <= 0:
+        print("Error: duration must be positive")
+        sys.exit(1)
+    
+    # Check if samples directory exists
+    samples_path = Path(args.samples_dir)
+    if not samples_path.exists():
+        print(f"Error: Samples directory '{args.samples_dir}' does not exist")
+        sys.exit(1)
+    
+    # Create and run load tester
+    tester = LoadTester(args.server_url, args.files_per_second, args.duration, args.samples_dir)
+    
+    try:
+        result = await tester.run_load_test()
+        tester.print_results(result)
+    except KeyboardInterrupt:
+        print("\nTest interrupted by user")
+        if tester.results:
+            result = tester.calculate_results()
+            tester.print_results(result)
+    except Exception as e:
+        print(f"Error running load test: {e}")
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    asyncio.run(main())
