@@ -4,8 +4,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import jakarta.annotation.PostConstruct;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.*;
@@ -16,7 +14,6 @@ import java.util.UUID;
 @Service
 public class FileBatchingService {
 
-    private static final Logger logger = LoggerFactory.getLogger(FileBatchingService.class);
     private static final long FAILED_RETRY_BACKOFF_MS = 10_000L;
     private static final int FAILED_RETRY_ATTEMPTS = 3;
 
@@ -48,14 +45,6 @@ public class FileBatchingService {
 
     @PostConstruct
     public void initialize() {
-        // Log first 40 characters of DXR_API_KEY for verification
-        if (apiKey != null && !apiKey.isEmpty()) {
-            String preview = apiKey.length() > 40 ? apiKey.substring(0, 40) + "..." : apiKey;
-            logger.info("DXR_API_KEY (first 40 chars): {}", preview);
-        } else {
-            logger.info("DXR_API_KEY is not set. API key must be provided via Authorization header.");
-        }
-        
         this.datasourceIdCounter.set(firstDatasourceId);
     }
 
@@ -119,7 +108,6 @@ public class FileBatchingService {
                         FileClassificationResult result = new FileClassificationResult(
                             request.file().getOriginalFilename(),
                             "FAILED",
-                            Collections.singletonList("No API key provided"),
                             Collections.emptyMap()
                         );
                         request.result().complete(result);
@@ -181,7 +169,6 @@ public class FileBatchingService {
                         FileClassificationResult result = new FileClassificationResult(
                             fileData.originalFilename(),
                             "FINISHED",
-                            classificationData.tags(),
                             classificationData.extractedMetadata()
                         );
                         request.result().complete(result);
@@ -191,7 +178,6 @@ public class FileBatchingService {
                         FileClassificationResult result = new FileClassificationResult(
                             request.file().getOriginalFilename(),
                             "FAILED",
-                            Collections.emptyList(),
                             Collections.emptyMap()
                         );
                         request.result().complete(result);
@@ -235,5 +221,5 @@ public class FileBatchingService {
 
     public static record FileData(String originalFilename, String enhancedFilename, byte[] content, String contentType) {}
 
-    public static record FileClassificationResult(String filename, String status, List<String> tags, java.util.Map<String, String> extractedMetadata) {}
+    public static record FileClassificationResult(String filename, String status, java.util.Map<String, String> extractedMetadata) {}
 }

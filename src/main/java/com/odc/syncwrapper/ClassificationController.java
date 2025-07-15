@@ -32,7 +32,6 @@ public class ClassificationController {
                 new FileBatchingService.FileClassificationResult(
                     file.getOriginalFilename(),
                     "FAILED",
-                    java.util.Collections.emptyList(),
                     java.util.Collections.emptyMap()
                 )
             );
@@ -57,7 +56,6 @@ public class ClassificationController {
                 new FileBatchingService.FileClassificationResult(
                     file.getOriginalFilename(),
                     "FAILED",
-                    java.util.Collections.emptyList(),
                     java.util.Collections.emptyMap()
                 )
             );

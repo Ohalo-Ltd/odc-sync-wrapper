@@ -85,7 +85,6 @@ public class AuthorizationHeaderTest {
         assertNotNull(response.getBody());
         assertEquals("FAILED", response.getBody().status());
         assertEquals("sample1.txt", response.getBody().filename());
-        assertTrue(response.getBody().tags().contains("No API key provided"));
     }
 
     @Test
@@ -115,6 +114,5 @@ public class AuthorizationHeaderTest {
         assertNotNull(response.getBody());
         assertEquals("FAILED", response.getBody().status());
         assertEquals("sample1.txt", response.getBody().filename());
-        assertTrue(response.getBody().tags().contains("No API key provided"));
     }
 }
