@@ -22,7 +22,7 @@ import java.time.Duration;
 class DxrClient {
     private static final Logger logger = LoggerFactory.getLogger(DxrClient.class);
     record JobStatus(String state, long datasourceScanId) {}
-    record ClassificationData(java.util.List<String> tags, java.util.Map<String, String> extractedMetadata) {}
+    record ClassificationData(java.util.Map<String, String> extractedMetadata) {}
 
     private final RetryPolicy<Response> retryPolicy = RetryPolicy.<Response>builder()
             .handle(IOException.class)
@@ -192,7 +192,6 @@ class DxrClient {
             if (!response.isSuccessful()) {
                 throw new IOException("Unexpected response: " + response.code() + " " + respBody);
             }
-            java.util.List<String> tags = new java.util.ArrayList<>();
             java.util.Map<String, String> extractedMetadata = new java.util.HashMap<>();
 
             JSONObject obj = new JSONObject(respBody);
@@ -204,14 +203,6 @@ class DxrClient {
                         JSONObject hit = arr.getJSONObject(i);
                         JSONObject src = hit.optJSONObject("_source");
                         if (src != null) {
-                            // Extract tags
-                            if (src.has("dxr#tags")) {
-                                JSONArray t = src.getJSONArray("dxr#tags");
-                                for (int j = 0; j < t.length(); j++) {
-                                    tags.add(String.valueOf(t.get(j)));
-                                }
-                            }
-                            
                             // Extract all metadata fields that start with "extracted_metadata#"
                             for (String key : src.keySet()) {
                                 if (key.startsWith("extracted_metadata#")) {
@@ -225,12 +216,10 @@ class DxrClient {
                     }
                 }
             }
-            logger.info("Successfully fetched search results for scan ID {}: {} tags found: {}, {} metadata fields: {}",
-                scanId, tags.size(),
-                tags.isEmpty() ? "none" : String.join(", ", tags),
-                extractedMetadata.size(),
+            logger.info("Successfully fetched search results for scan ID {}: {} metadata fields: {}",
+                scanId, extractedMetadata.size(),
                 extractedMetadata.isEmpty() ? "none" : extractedMetadata.keySet().toString());
-            return new ClassificationData(tags, extractedMetadata);
+            return new ClassificationData(extractedMetadata);
         }
     }
 }

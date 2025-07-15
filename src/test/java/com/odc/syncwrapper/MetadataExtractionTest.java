@@ -3,7 +3,6 @@ package com.odc.syncwrapper;
 import org.junit.jupiter.api.Test;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.MockResponse;
-import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -42,9 +41,6 @@ class MetadataExtractionTest {
         DxrClient client = new DxrClient(baseUrl, "test-key");
         
         DxrClient.ClassificationData data = client.getTagIds(1);
-        
-        // Verify tags
-        assertEquals(List.of("SENSITIVE", "PII"), data.tags());
         
         // Verify metadata extraction
         Map<String, String> metadata = data.extractedMetadata();
@@ -88,7 +84,6 @@ class MetadataExtractionTest {
         
         DxrClient.ClassificationData data = client.getTagIds(1);
         
-        assertEquals(List.of("PUBLIC"), data.tags());
         assertTrue(data.extractedMetadata().isEmpty());
         
         server.shutdown();
