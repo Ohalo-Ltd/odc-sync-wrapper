@@ -379,8 +379,8 @@ class LoadTestSuite:
 
 async def main():
     parser = argparse.ArgumentParser(description='Performance Load Test Suite for ODC Sync Wrapper API')
-    parser.add_argument('--server-url', type=str, default='http://localhost:8080',
-                        help='Server URL (default: http://localhost:8080)')
+    parser.add_argument('--server-url', type=str, default='http://localhost:8844',
+                        help='Server URL (default: http://localhost:8844)')
     parser.add_argument('--samples-dir', type=str, default='samples',
                         help='Directory containing sample files (default: samples)')
     parser.add_argument('--duration', type=int, default=180,

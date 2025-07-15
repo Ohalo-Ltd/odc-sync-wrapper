@@ -37,7 +37,7 @@ java -jar target/odc-sync-wrapper-0.1.0-SNAPSHOT.jar
 ### Run with Docker
 ```bash
 docker build -t odc-sync-wrapper .
-docker run -p 8080:8080 \
+docker run -p 8844:8844 \
   -e DXR_BASE_URL="https://your-dxr-instance.com/api" \
   -e DXR_API_KEY="your-api-key" \
   -e DXR_FIRST_ODC_DATASOURCE_ID="200" \

@@ -1,6 +1,6 @@
 # ODC Sync Wrapper
 
-`odc-sync-wrapper` is a REST API server that provides synchronous file classification using the asynchronous Data X-Ray API. It accepts individual file uploads via HTTP and returns classification results synchronously, while internally optimizing Data X-Ray API usage through intelligent batching.
+`odc-sync-wrapper` is a REST API server that provides synchronous file classification using the asynchronous Data X-Ray API. It accepts individual file uploads via HTTP and returns the results of all metadata extractors that are configured on that organization in a synchronous API call, while internally optimizing Data X-Ray API usage through intelligent batching.
 
 ## Key Features
 
@@ -29,7 +29,7 @@ The server supports two methods for providing the Data X-Ray API key:
 2. **Authorization Header**: Pass the API key in the `Authorization: Bearer <token>` header with each request (new method)
 
 If both are provided, the Authorization header takes precedence. If neither is provided, requests will fail with an error message.
- 
+
 ## Building and Running
 
 This project uses Maven with Spring Boot. Build the application with:
@@ -48,7 +48,7 @@ Set the required environment variables and run:
 export DXR_BASE_URL="https://your-dxr-instance.com/api"
 export DXR_API_KEY="your-personal-access-token"  # Optional if using Authorization header
 export DXR_FIRST_ODC_DATASOURCE_ID="200"
-export DXR_ODC_DATASOURCE_COUNT="10" 
+export DXR_ODC_DATASOURCE_COUNT="10"
 export DXR_MAX_BATCH_SIZE="5"
 export DXR_BATCH_INTERVAL_SEC="30"
 
@@ -62,7 +62,7 @@ If you prefer to use Authorization headers exclusively:
 ```bash
 export DXR_BASE_URL="https://your-dxr-instance.com/api"
 export DXR_FIRST_ODC_DATASOURCE_ID="200"
-export DXR_ODC_DATASOURCE_COUNT="10" 
+export DXR_ODC_DATASOURCE_COUNT="10"
 export DXR_MAX_BATCH_SIZE="5"
 export DXR_BATCH_INTERVAL_SEC="30"
 
@@ -74,7 +74,7 @@ java -jar target/odc-sync-wrapper-0.1.0-SNAPSHOT.jar
 **With environment variable authentication:**
 ```bash
 docker build -t odc-sync-wrapper .
-docker run -p 8080:8080 \
+docker run -p 8844:8844 \
   -e DXR_BASE_URL="https://your-dxr-instance.com/api" \
   -e DXR_API_KEY="your-personal-access-token" \
   -e DXR_FIRST_ODC_DATASOURCE_ID="200" \
@@ -87,7 +87,7 @@ docker run -p 8080:8080 \
 **With Authorization header authentication only:**
 ```bash
 docker build -t odc-sync-wrapper .
-docker run -p 8080:8080 \
+docker run -p 8844:8844 \
   -e DXR_BASE_URL="https://your-dxr-instance.com/api" \
   -e DXR_FIRST_ODC_DATASOURCE_ID="200" \
   -e DXR_ODC_DATASOURCE_COUNT="10" \
@@ -98,21 +98,21 @@ docker run -p 8080:8080 \
 
 ## API Usage
 
-Once running, the server exposes a REST API on port 8080:
+Once running, the server exposes a REST API on port 8844:
 
 ### Classify File
 
 **Using Environment Variable Authentication:**
 ```bash
 curl -X POST \
-  http://localhost:8080/classify-file \
+  http://localhost:8844/classify-file \
   -F "file=@your-document.txt"
 ```
 
 **Using Authorization Header Authentication:**
 ```bash
 curl -X POST \
-  http://localhost:8080/classify-file \
+  http://localhost:8844/classify-file \
   -H "Authorization: Bearer your-personal-access-token" \
   -F "file=@your-document.txt"
 ```
@@ -121,14 +121,18 @@ Response:
 ```json
 {
   "filename": "your-document.txt",
-  "status": "FINISHED", 
-  "tags": ["tag1", "tag2"]
+  "status": "FINISHED",
+  "extractedMetadata": {
+    "extracted_metadata#1": "SSN",
+    "extracted_metadata#2": "Credit Card",
+    "extracted_metadata#custom": "Custom Field"
+  }
 }
 ```
 
 ### Health Check
 ```bash
-curl http://localhost:8080/health
+curl http://localhost:8844/health
 ```
 
 

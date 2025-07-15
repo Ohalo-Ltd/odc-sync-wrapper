@@ -245,8 +245,8 @@ async def main():
                         help='Number of files to send per second')
     parser.add_argument('--duration', type=int, required=True, 
                         help='Test duration in seconds')
-    parser.add_argument('--server-url', type=str, default='http://localhost:8080', 
-                        help='Server URL (default: http://localhost:8080)')
+    parser.add_argument('--server-url', type=str, default='http://localhost:8844', 
+                        help='Server URL (default: http://localhost:8844)')
     parser.add_argument('--samples-dir', type=str, default='samples', 
                         help='Directory containing sample files (default: samples)')
     
