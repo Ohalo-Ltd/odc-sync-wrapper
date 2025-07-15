@@ -4,6 +4,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.*;
@@ -14,6 +16,7 @@ import java.util.UUID;
 @Service
 public class FileBatchingService {
 
+    private static final Logger logger = LoggerFactory.getLogger(FileBatchingService.class);
     private static final long FAILED_RETRY_BACKOFF_MS = 10_000L;
     private static final int FAILED_RETRY_ATTEMPTS = 3;
 
@@ -45,12 +48,12 @@ public class FileBatchingService {
 
     @PostConstruct
     public void initialize() {
-        // Print first 40 characters of DXR_API_KEY for verification
+        // Log first 40 characters of DXR_API_KEY for verification
         if (apiKey != null && !apiKey.isEmpty()) {
             String preview = apiKey.length() > 40 ? apiKey.substring(0, 40) + "..." : apiKey;
-            System.out.println("DXR_API_KEY (first 40 chars): " + preview);
+            logger.info("DXR_API_KEY (first 40 chars): {}", preview);
         } else {
-            System.out.println("INFO: DXR_API_KEY is not set. API key must be provided via Authorization header.");
+            logger.info("DXR_API_KEY is not set. API key must be provided via Authorization header.");
         }
         
         this.datasourceIdCounter.set(firstDatasourceId);

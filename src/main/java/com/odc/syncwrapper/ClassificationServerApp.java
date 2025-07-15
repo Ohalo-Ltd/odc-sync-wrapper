@@ -3,9 +3,13 @@ package com.odc.syncwrapper;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @SpringBootApplication
 public class ClassificationServerApp {
+
+    private static final Logger logger = LoggerFactory.getLogger(ClassificationServerApp.class);
 
     public static void main(String[] args) {
         validateEnvironmentVariables();
@@ -15,13 +19,12 @@ public class ClassificationServerApp {
         FileBatchingService fileBatchingService = context.getBean(FileBatchingService.class);
         fileBatchingService.initialize();
         
-        System.out.println("Classification server started successfully!");
+        logger.info("Classification server started successfully!");
     }
     
     private static void validateEnvironmentVariables() {
         String[] requiredEnvVars = {
             "DXR_BASE_URL",
-            "DXR_API_KEY", 
             "DXR_FIRST_ODC_DATASOURCE_ID",
             "DXR_ODC_DATASOURCE_COUNT",
             "DXR_MAX_BATCH_SIZE",
@@ -31,20 +34,18 @@ public class ClassificationServerApp {
         for (String envVar : requiredEnvVars) {
             String value = System.getenv(envVar);
             if (value == null) {
-                if ("DXR_API_KEY".equals(envVar)) {
-                    System.err.println("ERROR: DXR_API_KEY environment variable is not set!");
-                    System.err.println("Please set your Data X-Ray API key: export DXR_API_KEY=\"your-api-key-here\"");
-                } else {
-                    System.err.println("Required environment variable " + envVar + " is not set");
-                }
+                System.err.println("Required environment variable " + envVar + " is not set");
                 System.exit(1);
             }
-            
-            // Print first 40 characters of DXR_API_KEY for verification
-            if ("DXR_API_KEY".equals(envVar)) {
-                String preview = value.length() > 40 ? value.substring(0, 40) + "..." : value;
-                System.out.println("DXR_API_KEY (first 40 chars): " + preview);
-            }
+        }
+        
+        // Check DXR_API_KEY separately as it's optional (can be provided via Authorization header)
+        String apiKey = System.getenv("DXR_API_KEY");
+        if (apiKey != null && !apiKey.isEmpty()) {
+            String preview = apiKey.length() > 40 ? apiKey.substring(0, 40) + "..." : apiKey;
+            logger.info("DXR_API_KEY (first 40 chars): {}", preview);
+        } else {
+            logger.info("DXR_API_KEY not set. API key must be provided via Authorization header.");
         }
     }
 }
