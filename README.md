@@ -158,6 +158,51 @@ In the Data X-Ray UI:
 1. (Optional) Create a settings profile and add all datasources if you need to configure annotators
 2. (Optional) Create smart labels for the on-demand classifiers if you need to see classification tags
 
+### Configuring on a single server Data X-Ray VM
+
+#### Update NGINX to redirect all requests to the server
+
+Note that this is a manual step that should be done any time you update your ohalo-ansible configuration files (e.g. when you are updating the Data X-Ray version).
+
+On the machine where you run ansible, edit the nginx template.
+```
+vim ohalo-ansible/roles/nginx/templates/proxy_block.conf.j2
+```
+
+Under the `location` block for the `/health` endpoint, add the following lines
+```
+location /classify-file {
+  proxy_pass  http://host.containers.internal:8844/classify-file;
+}
+```
+
+Then restart the Data X-Ray server, with a full stop and start:
+```
+dxr-ansible --tags="stop" && dxr-ansible
+```
+
+#### Pull and run the `odc-sync-wrapper` docker container
+
+This will be run as a docker container that is not managed by `dxr-ansible`. You should be familiar with pulling images, starting and stopping containers, and managing logs of docker containers.
+
+As the `ohalo` user, run the following:
+
+```
+docker pull ghcr.io/ohalo-ltd/odc-sync-wrapper:latest
+```
+
+```
+docker run -d -p 8844:8844 \
+  -e DXR_BASE_URL="http://host.containers.internal:8081/api" \
+  -e DXR_FIRST_ODC_DATASOURCE_ID="100" \
+  -e DXR_ODC_DATASOURCE_COUNT="2" \
+  -e DXR_MAX_BATCH_SIZE="5" \
+  -e DXR_BATCH_INTERVAL_SEC="1" \
+  ghcr.io/ohalo-ltd/odc-sync-wrapper:latest
+```
+
+Now you should be able to call the API endpoint `https://<your_dxr_address>/classify-file` with the API key from your DXR user.
+
 ## Testing
 
 ### Unit Tests
