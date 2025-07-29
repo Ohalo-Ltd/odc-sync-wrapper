@@ -28,11 +28,13 @@ public class ClassificationController {
                    file.getOriginalFilename(), file.getSize());
 
         if (file.isEmpty()) {
+            String errorMsg = "Empty file provided";
+            logger.error("Classification request failed for '{}': {}", file.getOriginalFilename(), errorMsg);
             return ResponseEntity.badRequest().body(
                 new FileBatchingService.FileClassificationResult(
                     file.getOriginalFilename(),
                     "FAILED",
-                    java.util.Collections.emptyMap()
+                    java.util.Collections.singletonMap("error", errorMsg)
                 )
             );
         }
@@ -47,16 +49,25 @@ public class ClassificationController {
                 fileBatchingService.processFile(file, apiKey);
 
             FileBatchingService.FileClassificationResult result = future.get(1200, TimeUnit.SECONDS);
+            
+            if ("FINISHED".equals(result.status())) {
+                logger.info("Classification completed successfully for '{}' with {} metadata fields", 
+                    result.filename(), result.extractedMetadata().size());
+            } else {
+                logger.warn("Classification failed for '{}' with status: {} and error: {}", 
+                    result.filename(), result.status(), result.extractedMetadata().get("error"));
+            }
 
             return ResponseEntity.ok(result);
         } catch (Exception e) {
+            String errorMsg = "Internal server error: " + e.getMessage();
             logger.error("Error processing file classification for '{}': {}",
                         file.getOriginalFilename(), e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
                 new FileBatchingService.FileClassificationResult(
                     file.getOriginalFilename(),
                     "FAILED",
-                    java.util.Collections.emptyMap()
+                    java.util.Collections.singletonMap("error", errorMsg)
                 )
             );
         }

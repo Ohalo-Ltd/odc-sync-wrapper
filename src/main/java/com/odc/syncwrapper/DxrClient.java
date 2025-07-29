@@ -121,10 +121,14 @@ class DxrClient {
         try (Response response = executeWithRetry(request)) {
             String body = response.body() != null ? response.body().string() : "";
             if (!response.isSuccessful()) {
-                throw new IOException("Unexpected response: " + response.code() + " " + body);
+                String errorMsg = "Job submission failed: HTTP " + response.code() + " - " + body;
+                logger.error("Failed to submit job to datasource {}: {}", datasourceId, errorMsg);
+                throw new IOException(errorMsg);
             }
             JSONObject obj = new JSONObject(body);
-            return obj.getString("id");
+            String jobId = obj.getString("id");
+            logger.debug("Successfully submitted job {} to datasource {}", jobId, datasourceId);
+            return jobId;
         }
     }
 
@@ -138,7 +142,9 @@ class DxrClient {
         try (Response response = executeWithRetry(request)) {
             String body = response.body() != null ? response.body().string() : "";
             if (!response.isSuccessful()) {
-                throw new IOException("Unexpected response: " + response.code() + " " + body);
+                String errorMsg = "Job status check failed: HTTP " + response.code() + " - " + body;
+                logger.error("Failed to get status for job {} on datasource {}: {}", jobId, datasourceId, errorMsg);
+                throw new IOException(errorMsg);
             }
             JSONObject obj = new JSONObject(body);
             String state;
@@ -190,7 +196,9 @@ class DxrClient {
         try (Response response = executeWithRetry(request)) {
             String respBody = response.body() != null ? response.body().string() : "";
             if (!response.isSuccessful()) {
-                throw new IOException("Unexpected response: " + response.code() + " " + respBody);
+                String errorMsg = "Search request failed: HTTP " + response.code() + " - " + respBody;
+                logger.error("Failed to search for scan ID {}: {}", scanId, errorMsg);
+                throw new IOException(errorMsg);
             }
             java.util.Map<String, String> extractedMetadata = new java.util.HashMap<>();
 
@@ -216,9 +224,12 @@ class DxrClient {
                     }
                 }
             }
-            logger.info("Successfully fetched search results for scan ID {}: {} metadata fields: {}",
-                scanId, extractedMetadata.size(),
-                extractedMetadata.isEmpty() ? "none" : extractedMetadata.keySet().toString());
+            if (extractedMetadata.isEmpty()) {
+                logger.warn("No extracted metadata found for scan ID {}", scanId);
+            } else {
+                logger.info("Successfully fetched search results for scan ID {}: {} metadata fields: {}",
+                    scanId, extractedMetadata.size(), extractedMetadata.keySet().toString());
+            }
             return new ClassificationData(extractedMetadata);
         }
     }
