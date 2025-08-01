@@ -34,7 +34,11 @@ public class ClassificationController {
                 new FileBatchingService.FileClassificationResult(
                     file.getOriginalFilename(),
                     "FAILED",
-                    java.util.Collections.singletonMap("error", errorMsg)
+                    java.util.Collections.singletonMap("error", errorMsg),
+                    java.util.Collections.emptyList(),
+                    java.util.Collections.emptyList(),
+                    null,
+                    java.util.Collections.emptyList()
                 )
             );
         }
@@ -51,8 +55,8 @@ public class ClassificationController {
             FileBatchingService.FileClassificationResult result = future.get(1200, TimeUnit.SECONDS);
             
             if ("FINISHED".equals(result.status())) {
-                logger.info("Classification completed successfully for '{}' with {} metadata fields", 
-                    result.filename(), result.extractedMetadata().size());
+                logger.info("Classification completed successfully for '{}' with {} metadata fields, {} annotators, {} labels, {} annotation results", 
+                    result.filename(), result.extractedMetadata().size(), result.annotators().size(), result.labels().size(), result.annotationResults().size());
             } else {
                 logger.warn("Classification failed for '{}' with status: {} and error: {}", 
                     result.filename(), result.status(), result.extractedMetadata().get("error"));
@@ -67,7 +71,11 @@ public class ClassificationController {
                 new FileBatchingService.FileClassificationResult(
                     file.getOriginalFilename(),
                     "FAILED",
-                    java.util.Collections.singletonMap("error", errorMsg)
+                    java.util.Collections.singletonMap("error", errorMsg),
+                    java.util.Collections.emptyList(),
+                    java.util.Collections.emptyList(),
+                    null,
+                    java.util.Collections.emptyList()
                 )
             );
         }

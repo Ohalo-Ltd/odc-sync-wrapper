@@ -115,7 +115,11 @@ public class FileBatchingService {
                         FileClassificationResult result = new FileClassificationResult(
                             request.file().getOriginalFilename(),
                             "FAILED",
-                            Collections.singletonMap("error", errorMsg)
+                            Collections.singletonMap("error", errorMsg),
+                            Collections.emptyList(),
+                            Collections.emptyList(),
+                            null,
+                            Collections.emptyList()
                         );
                         request.result().complete(result);
                     }
@@ -142,7 +146,11 @@ public class FileBatchingService {
                         FileClassificationResult result = new FileClassificationResult(
                             request.file().getOriginalFilename(),
                             "FAILED",
-                            Collections.singletonMap("error", "Failed to read file: " + e.getMessage())
+                            Collections.singletonMap("error", "Failed to read file: " + e.getMessage()),
+                            Collections.emptyList(),
+                            Collections.emptyList(),
+                            null,
+                            Collections.emptyList()
                         );
                         request.result().complete(result);
                     }
@@ -188,12 +196,21 @@ public class FileBatchingService {
                     for (int i = 0; i < batch.size() && i < fileDataList.size(); i++) {
                         FileRequest request = batch.get(i);
                         FileData fileData = fileDataList.get(i);
-                        logger.info("File '{}' classified successfully with {} metadata fields", 
-                            fileData.originalFilename(), classificationData.extractedMetadata().size());
+                        // Convert DxrClient.AnnotationStat to FileBatchingService.AnnotationStat
+                        java.util.List<AnnotationStat> annotationResults = classificationData.annotationResults().stream()
+                            .map(stat -> new AnnotationStat(stat.id(), stat.count()))
+                            .toList();
+                        logger.info("File '{}' classified successfully with {} metadata fields, {} annotators, {} labels, {} annotation results", 
+                            fileData.originalFilename(), classificationData.extractedMetadata().size(),
+                            classificationData.annotators().size(), classificationData.labels().size(), annotationResults.size());
                         FileClassificationResult result = new FileClassificationResult(
                             fileData.originalFilename(),
                             "FINISHED",
-                            classificationData.extractedMetadata()
+                            classificationData.extractedMetadata(),
+                            classificationData.annotators(),
+                            classificationData.labels(),
+                            classificationData.aiCategory(),
+                            annotationResults
                         );
                         request.result().complete(result);
                     }
@@ -206,7 +223,11 @@ public class FileBatchingService {
                         FileClassificationResult result = new FileClassificationResult(
                             request.file().getOriginalFilename(),
                             "FAILED",
-                            Collections.singletonMap("error", errorMsg)
+                            Collections.singletonMap("error", errorMsg),
+                            Collections.emptyList(),
+                            Collections.emptyList(),
+                            null,
+                            Collections.emptyList()
                         );
                         request.result().complete(result);
                     }
@@ -221,7 +242,11 @@ public class FileBatchingService {
                     FileClassificationResult result = new FileClassificationResult(
                         request.file().getOriginalFilename(),
                         "FAILED",
-                        Collections.singletonMap("error", errorMsg)
+                        Collections.singletonMap("error", errorMsg),
+                        Collections.emptyList(),
+                        Collections.emptyList(),
+                        null,
+                        Collections.emptyList()
                     );
                     request.result().complete(result);
                 }
@@ -258,5 +283,6 @@ public class FileBatchingService {
 
     public static record FileData(String originalFilename, String enhancedFilename, byte[] content, String contentType) {}
 
-    public static record FileClassificationResult(String filename, String status, java.util.Map<String, String> extractedMetadata) {}
+    public static record AnnotationStat(int id, int count) {} 
+    public static record FileClassificationResult(String filename, String status, java.util.Map<String, String> extractedMetadata, java.util.List<String> annotators, java.util.List<String> labels, String aiCategory, java.util.List<AnnotationStat> annotationResults) {}
 }

@@ -22,7 +22,8 @@ import java.time.Duration;
 class DxrClient {
     private static final Logger logger = LoggerFactory.getLogger(DxrClient.class);
     record JobStatus(String state, long datasourceScanId) {}
-    record ClassificationData(java.util.Map<String, String> extractedMetadata) {}
+    record AnnotationStat(int id, int count) {}
+    record ClassificationData(java.util.Map<String, String> extractedMetadata, java.util.List<String> annotators, java.util.List<String> labels, String aiCategory, java.util.List<AnnotationStat> annotationResults) {}
 
     private final RetryPolicy<Response> retryPolicy = RetryPolicy.<Response>builder()
             .handle(IOException.class)
@@ -201,6 +202,10 @@ class DxrClient {
                 throw new IOException(errorMsg);
             }
             java.util.Map<String, String> extractedMetadata = new java.util.HashMap<>();
+            java.util.List<String> annotators = new java.util.ArrayList<>();
+            java.util.List<String> labels = new java.util.ArrayList<>();
+            String aiCategory = null;
+            java.util.Map<Integer, Integer> annotationCounts = new java.util.HashMap<>();
 
             JSONObject obj = new JSONObject(respBody);
             JSONObject hits = obj.optJSONObject("hits");
@@ -218,19 +223,83 @@ class DxrClient {
                                     if (value != null) {
                                         extractedMetadata.put(key, String.valueOf(value));
                                     }
+                                } else if (key.startsWith("annotation_stats#count.")) {
+                                    // Extract annotation statistics
+                                    try {
+                                        String idStr = key.substring("annotation_stats#count.".length());
+                                        int annotationId = Integer.parseInt(idStr);
+                                        Object value = src.get(key);
+                                        if (value != null) {
+                                            int count = Integer.parseInt(String.valueOf(value));
+                                            annotationCounts.put(annotationId, count);
+                                        }
+                                    } catch (NumberFormatException e) {
+                                        logger.debug("Skipping invalid annotation count key: {}", key);
+                                    }
+                                }
+                            }
+
+                            // Extract annotators
+                            if (src.has("annotators")) {
+                                Object annotatorsValue = src.get("annotators");
+                                if (annotatorsValue instanceof JSONArray annotatorsArray) {
+                                    for (int j = 0; j < annotatorsArray.length(); j++) {
+                                        String annotator = annotatorsArray.optString(j);
+                                        if (annotator != null && !annotator.isEmpty() && !annotators.contains(annotator)) {
+                                            annotators.add(annotator);
+                                        }
+                                    }
+                                } else if (annotatorsValue != null) {
+                                    String annotator = String.valueOf(annotatorsValue);
+                                    if (!annotator.isEmpty() && !annotators.contains(annotator)) {
+                                        annotators.add(annotator);
+                                    }
+                                }
+                            }
+
+                            // Extract labels
+                            if (src.has("labels")) {
+                                Object labelsValue = src.get("labels");
+                                if (labelsValue instanceof JSONArray labelsArray) {
+                                    for (int j = 0; j < labelsArray.length(); j++) {
+                                        String label = labelsArray.optString(j);
+                                        if (label != null && !label.isEmpty() && !labels.contains(label)) {
+                                            labels.add(label);
+                                        }
+                                    }
+                                } else if (labelsValue != null) {
+                                    String label = String.valueOf(labelsValue);
+                                    if (!label.isEmpty() && !labels.contains(label)) {
+                                        labels.add(label);
+                                    }
+                                }
+                            }
+
+                            // Extract ai#category (take the first non-null value found)
+                            if (aiCategory == null && src.has("ai#category")) {
+                                Object aiCategoryValue = src.get("ai#category");
+                                if (aiCategoryValue != null) {
+                                    aiCategory = String.valueOf(aiCategoryValue);
                                 }
                             }
                         }
                     }
                 }
             }
-            if (extractedMetadata.isEmpty()) {
-                logger.warn("No extracted metadata found for scan ID {}", scanId);
+            
+            // Convert annotation counts map to list of AnnotationStat records
+            java.util.List<AnnotationStat> annotationResults = annotationCounts.entrySet().stream()
+                .map(entry -> new AnnotationStat(entry.getKey(), entry.getValue()))
+                .sorted((a, b) -> Integer.compare(a.id(), b.id()))
+                .toList();
+            
+            if (extractedMetadata.isEmpty() && annotators.isEmpty() && labels.isEmpty() && aiCategory == null && annotationResults.isEmpty()) {
+                logger.warn("No classification data found for scan ID {}", scanId);
             } else {
-                logger.info("Successfully fetched search results for scan ID {}: {} metadata fields: {}",
-                    scanId, extractedMetadata.size(), extractedMetadata.keySet().toString());
+                logger.info("Successfully fetched search results for scan ID {}: {} metadata fields, {} annotators, {} labels, {} annotation results, ai#category: {}",
+                    scanId, extractedMetadata.size(), annotators.size(), labels.size(), annotationResults.size(), aiCategory);
             }
-            return new ClassificationData(extractedMetadata);
+            return new ClassificationData(extractedMetadata, annotators, labels, aiCategory, annotationResults);
         }
     }
 }
