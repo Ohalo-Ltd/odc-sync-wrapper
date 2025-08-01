@@ -21,9 +21,10 @@ import java.time.Duration;
 
 class DxrClient {
     private static final Logger logger = LoggerFactory.getLogger(DxrClient.class);
-    record JobStatus(String state, long datasourceScanId) {}
+    record JobStatus(String state, long datasourceScanId, String errorMessage) {}
     record AnnotationStat(int id, int count) {}
-    record ClassificationData(java.util.Map<String, String> extractedMetadata, java.util.List<String> annotators, java.util.List<String> labels, String aiCategory, java.util.List<AnnotationStat> annotationResults) {}
+    record MetadataItem(int id, String value) {}
+    record ClassificationData(java.util.List<MetadataItem> extractedMetadata, java.util.List<String> annotators, java.util.List<String> labels, String aiCategory, java.util.List<AnnotationStat> annotationResults) {}
 
     private final RetryPolicy<Response> retryPolicy = RetryPolicy.<Response>builder()
             .handle(IOException.class)
@@ -150,10 +151,19 @@ class DxrClient {
             JSONObject obj = new JSONObject(body);
             String state;
             long scanId = -1;
+            String errorMessage = null;
+            
             if (obj.optJSONObject("state") != null) {
                 JSONObject stateObj = obj.getJSONObject("state");
                 state = stateObj.optString("value", stateObj.optString("state", "UNKNOWN"));
                 scanId = stateObj.optLong("datasourceScanId", -1);
+                
+                // Extract error message if present
+                if (stateObj.has("errorMessage")) {
+                    errorMessage = stateObj.optString("errorMessage");
+                } else if (stateObj.has("message")) {
+                    errorMessage = stateObj.optString("message");
+                }
             } else {
                 state = obj.optString("state", "UNKNOWN");
                 if (obj.has("datasourceScanId")) {
@@ -161,8 +171,18 @@ class DxrClient {
                 } else if (obj.has("state.datasourceScanId")) {
                     scanId = obj.optLong("state.datasourceScanId", -1);
                 }
+                
+                // Extract error message from top level if present
+                if (obj.has("errorMessage")) {
+                    errorMessage = obj.optString("errorMessage");
+                } else if (obj.has("message")) {
+                    errorMessage = obj.optString("message");
+                } else if (obj.has("error")) {
+                    errorMessage = obj.optString("error");
+                }
             }
-            return new JobStatus(state, scanId);
+            
+            return new JobStatus(state, scanId, errorMessage);
         }
     }
 
@@ -201,7 +221,7 @@ class DxrClient {
                 logger.error("Failed to search for scan ID {}: {}", scanId, errorMsg);
                 throw new IOException(errorMsg);
             }
-            java.util.Map<String, String> extractedMetadata = new java.util.HashMap<>();
+            java.util.Map<Integer, String> extractedMetadataMap = new java.util.HashMap<>();
             java.util.List<String> annotators = new java.util.ArrayList<>();
             java.util.List<String> labels = new java.util.ArrayList<>();
             String aiCategory = null;
@@ -219,9 +239,15 @@ class DxrClient {
                             // Extract all metadata fields that start with "extracted_metadata#"
                             for (String key : src.keySet()) {
                                 if (key.startsWith("extracted_metadata#")) {
-                                    Object value = src.get(key);
-                                    if (value != null) {
-                                        extractedMetadata.put(key, String.valueOf(value));
+                                    try {
+                                        String idStr = key.substring("extracted_metadata#".length());
+                                        int metadataId = Integer.parseInt(idStr);
+                                        Object value = src.get(key);
+                                        if (value != null) {
+                                            extractedMetadataMap.put(metadataId, String.valueOf(value));
+                                        }
+                                    } catch (NumberFormatException e) {
+                                        logger.debug("Skipping invalid metadata key: {}", key);
                                     }
                                 } else if (key.startsWith("annotation_stats#count.")) {
                                     // Extract annotation statistics
@@ -286,6 +312,12 @@ class DxrClient {
                     }
                 }
             }
+            
+            // Convert metadata map to list of MetadataItem records  
+            java.util.List<MetadataItem> extractedMetadata = extractedMetadataMap.entrySet().stream()
+                .map(entry -> new MetadataItem(entry.getKey(), entry.getValue()))
+                .sorted((a, b) -> Integer.compare(a.id(), b.id()))
+                .toList();
             
             // Convert annotation counts map to list of AnnotationStat records
             java.util.List<AnnotationStat> annotationResults = annotationCounts.entrySet().stream()

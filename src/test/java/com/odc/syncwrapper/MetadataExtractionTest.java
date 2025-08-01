@@ -3,7 +3,7 @@ package com.odc.syncwrapper;
 import org.junit.jupiter.api.Test;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.MockResponse;
-import java.util.Map;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -23,7 +23,6 @@ class MetadataExtractionTest {
                                 "dxr#tags": ["SENSITIVE", "PII"],
                                 "extracted_metadata#1": "SSN",
                                 "extracted_metadata#2": "Credit Card",
-                                "extracted_metadata#custom": "Custom Field",
                                 "other_field": "Should be ignored"
                             }
                         }
@@ -43,14 +42,14 @@ class MetadataExtractionTest {
         DxrClient.ClassificationData data = client.getTagIds(1);
         
         // Verify metadata extraction
-        Map<String, String> metadata = data.extractedMetadata();
-        assertEquals(3, metadata.size());
-        assertEquals("SSN", metadata.get("extracted_metadata#1"));
-        assertEquals("Credit Card", metadata.get("extracted_metadata#2"));
-        assertEquals("Custom Field", metadata.get("extracted_metadata#custom"));
+        List<DxrClient.MetadataItem> metadata = data.extractedMetadata();
+        assertEquals(2, metadata.size());
         
-        // Verify non-metadata fields are ignored
-        assertFalse(metadata.containsKey("other_field"));
+        // Check that metadata items are sorted by ID and have correct values
+        assertEquals(1, metadata.get(0).id());
+        assertEquals("SSN", metadata.get(0).value());
+        assertEquals(2, metadata.get(1).id());
+        assertEquals("Credit Card", metadata.get(1).value());
         
         server.shutdown();
     }

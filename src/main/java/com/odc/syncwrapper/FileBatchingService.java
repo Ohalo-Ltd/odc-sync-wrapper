@@ -115,7 +115,7 @@ public class FileBatchingService {
                         FileClassificationResult result = new FileClassificationResult(
                             request.file().getOriginalFilename(),
                             "FAILED",
-                            Collections.singletonMap("error", errorMsg),
+                            Collections.emptyList(),
                             Collections.emptyList(),
                             Collections.emptyList(),
                             null,
@@ -146,7 +146,7 @@ public class FileBatchingService {
                         FileClassificationResult result = new FileClassificationResult(
                             request.file().getOriginalFilename(),
                             "FAILED",
-                            Collections.singletonMap("error", "Failed to read file: " + e.getMessage()),
+                            Collections.emptyList(),
                             Collections.emptyList(),
                             Collections.emptyList(),
                             null,
@@ -165,8 +165,10 @@ public class FileBatchingService {
                 logger.info("Submitted job {} to datasource {} for {} files", jobId, datasourceId, fileDataList.size());
 
                 DxrClient.JobStatus status;
-                int attempts = 0;
+                int attemptNumber = 1; // Start with attempt 1 (the initial submission)
+                
                 do {
+                    // Wait for job to complete
                     do {
                         Thread.sleep(1000);
                         status = effectiveClient.getJobStatus(datasourceId, jobId);
@@ -174,17 +176,32 @@ public class FileBatchingService {
                     } while (!"FINISHED".equals(status.state()) && !"FAILED".equals(status.state()));
 
                     if (!"FAILED".equals(status.state())) {
-                        break;
+                        break; // Job succeeded, exit retry loop
                     }
 
-                    logger.warn("Job {} failed (attempt {}/{}). Status: {}", jobId, attempts + 1, FAILED_RETRY_ATTEMPTS, status.state());
+                    if (status.errorMessage() != null && !status.errorMessage().isEmpty()) {
+                        logger.warn("Job {} failed (attempt {}/{}). Status: {} - Error: {}", 
+                            jobId, attemptNumber, FAILED_RETRY_ATTEMPTS, status.state(), status.errorMessage());
+                    } else {
+                        logger.warn("Job {} failed (attempt {}/{}). Status: {}", 
+                            jobId, attemptNumber, FAILED_RETRY_ATTEMPTS, status.state());
+                    }
                     
-                    if (attempts >= FAILED_RETRY_ATTEMPTS) {
-                        logger.error("Job {} failed after {} attempts. Final status: {}", jobId, FAILED_RETRY_ATTEMPTS, status.state());
+                    // Check if we've exhausted all attempts
+                    if (attemptNumber >= FAILED_RETRY_ATTEMPTS) {
+                        if (status.errorMessage() != null && !status.errorMessage().isEmpty()) {
+                            logger.error("Job {} failed after {} attempts. Final status: {} - Error: {}", 
+                                jobId, FAILED_RETRY_ATTEMPTS, status.state(), status.errorMessage());
+                        } else {
+                            logger.error("Job {} failed after {} attempts. Final status: {}", 
+                                jobId, FAILED_RETRY_ATTEMPTS, status.state());
+                        }
                         break;
                     }
-                    attempts++;
-                    logger.info("Retrying job submission (attempt {}/{}) after {}ms delay", attempts + 1, FAILED_RETRY_ATTEMPTS, FAILED_RETRY_BACKOFF_MS);
+                    
+                    // Retry the job submission
+                    attemptNumber++;
+                    logger.info("Retrying job submission (attempt {}/{}) after {}ms delay", attemptNumber, FAILED_RETRY_ATTEMPTS, FAILED_RETRY_BACKOFF_MS);
                     Thread.sleep(FAILED_RETRY_BACKOFF_MS);
                     jobId = effectiveClient.submitJob(datasourceId, fileDataList);
                     logger.info("Retried job submission, new job ID: {}", jobId);
@@ -196,17 +213,20 @@ public class FileBatchingService {
                     for (int i = 0; i < batch.size() && i < fileDataList.size(); i++) {
                         FileRequest request = batch.get(i);
                         FileData fileData = fileDataList.get(i);
-                        // Convert DxrClient.AnnotationStat to FileBatchingService.AnnotationStat
+                        // Convert DxrClient records to FileBatchingService records
+                        java.util.List<MetadataItem> extractedMetadata = classificationData.extractedMetadata().stream()
+                            .map(item -> new MetadataItem(item.id(), item.value()))
+                            .toList();
                         java.util.List<AnnotationStat> annotationResults = classificationData.annotationResults().stream()
                             .map(stat -> new AnnotationStat(stat.id(), stat.count()))
                             .toList();
                         logger.info("File '{}' classified successfully with {} metadata fields, {} annotators, {} labels, {} annotation results", 
-                            fileData.originalFilename(), classificationData.extractedMetadata().size(),
+                            fileData.originalFilename(), extractedMetadata.size(),
                             classificationData.annotators().size(), classificationData.labels().size(), annotationResults.size());
                         FileClassificationResult result = new FileClassificationResult(
                             fileData.originalFilename(),
                             "FINISHED",
-                            classificationData.extractedMetadata(),
+                            extractedMetadata,
                             classificationData.annotators(),
                             classificationData.labels(),
                             classificationData.aiCategory(),
@@ -215,15 +235,21 @@ public class FileBatchingService {
                         request.result().complete(result);
                     }
                 } else {
-                    String errorMsg = String.format("Job %s failed after %d retry attempts. Final status: %s", 
-                        jobId, attempts, status.state());
+                    String errorMsg;
+                    if (status.errorMessage() != null && !status.errorMessage().isEmpty()) {
+                        errorMsg = String.format("Job %s failed after %d attempts. Final status: %s - Error: %s", 
+                            jobId, attemptNumber, status.state(), status.errorMessage());
+                    } else {
+                        errorMsg = String.format("Job %s failed after %d attempts. Final status: %s", 
+                            jobId, attemptNumber, status.state());
+                    }
                     logger.error("{} - failing {} files in batch", errorMsg, batch.size());
                     for (FileRequest request : batch) {
                         logger.error("File '{}' failed: {}", request.file().getOriginalFilename(), errorMsg);
                         FileClassificationResult result = new FileClassificationResult(
                             request.file().getOriginalFilename(),
                             "FAILED",
-                            Collections.singletonMap("error", errorMsg),
+                            Collections.emptyList(),
                             Collections.emptyList(),
                             Collections.emptyList(),
                             null,
@@ -242,7 +268,7 @@ public class FileBatchingService {
                     FileClassificationResult result = new FileClassificationResult(
                         request.file().getOriginalFilename(),
                         "FAILED",
-                        Collections.singletonMap("error", errorMsg),
+                        Collections.emptyList(),
                         Collections.emptyList(),
                         Collections.emptyList(),
                         null,
@@ -283,6 +309,7 @@ public class FileBatchingService {
 
     public static record FileData(String originalFilename, String enhancedFilename, byte[] content, String contentType) {}
 
-    public static record AnnotationStat(int id, int count) {} 
-    public static record FileClassificationResult(String filename, String status, java.util.Map<String, String> extractedMetadata, java.util.List<String> annotators, java.util.List<String> labels, String aiCategory, java.util.List<AnnotationStat> annotationResults) {}
+    public static record AnnotationStat(int id, int count) {}
+    public static record MetadataItem(int id, String value) {}
+    public static record FileClassificationResult(String filename, String status, java.util.List<MetadataItem> extractedMetadata, java.util.List<String> annotators, java.util.List<String> labels, String aiCategory, java.util.List<AnnotationStat> annotationResults) {}
 }
