@@ -1,0 +1,133 @@
+package com.odc.syncwrapper;
+
+import org.junit.jupiter.api.Test;
+import okhttp3.mockwebserver.MockWebServer;
+import okhttp3.mockwebserver.MockResponse;
+import okhttp3.mockwebserver.RecordedRequest;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class TagNameCacheTest {
+
+    @Test
+    void shouldCacheTagNamesAndReuseForMultipleCalls() throws Exception {
+        MockWebServer server = new MockWebServer();
+        
+        // Mock search response with same tag appearing twice
+        String searchResponse = """
+            {
+                "hits": {
+                    "hits": [
+                        {
+                            "_source": {
+                                "dxr#tags": [1, 1],
+                                "extracted_metadata#1": "SSN"
+                            }
+                        }
+                    ]
+                }
+            }
+            """;
+
+        server.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setBody(searchResponse));
+        // Mock tag name response - should only be called once due to caching
+        server.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setBody("{\"id\": 1, \"name\": \"Sensitive Data\"}"));
+        server.start();
+
+        String baseUrl = server.url("/").toString().replaceAll("/$", "");
+        DxrClient client = new DxrClient(baseUrl, "test-key");
+        
+        DxrClient.ClassificationData data = client.getTagIds(1);
+        
+        // Verify we got the tags
+        assertEquals(1, data.tags().size());
+        assertEquals(1, data.tags().get(0).id());
+        assertEquals("Sensitive Data", data.tags().get(0).name());
+        
+        // Verify only 2 requests were made: 1 search + 1 tag name (not 2 tag name calls)
+        assertEquals(2, server.getRequestCount());
+        
+        // Verify the requests
+        RecordedRequest searchRequest = server.takeRequest();
+        assertTrue(searchRequest.getPath().contains("/indexed-files/search"));
+        
+        RecordedRequest tagRequest = server.takeRequest();
+        assertTrue(tagRequest.getPath().contains("/tags/1"));
+        
+        server.shutdown();
+    }
+
+    @Test
+    void shouldCacheIndependentTagIds() throws Exception {
+        MockWebServer server = new MockWebServer();
+        
+        // Mock responses for different tag IDs
+        server.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setBody("{\"id\": 1, \"name\": \"First Tag\"}"));
+        server.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setBody("{\"id\": 2, \"name\": \"Second Tag\"}"));
+        server.start();
+
+        String baseUrl = server.url("/").toString().replaceAll("/$", "");
+        DxrClient client = new DxrClient(baseUrl, "test-key");
+        
+        // First call to tag 1 - should hit API and cache
+        String firstName = client.getTagName(1);
+        assertEquals("First Tag", firstName);
+        assertEquals(1, server.getRequestCount());
+        
+        // Second call to tag 1 - should use cache
+        String secondName = client.getTagName(1);
+        assertEquals("First Tag", secondName);
+        assertEquals(1, server.getRequestCount()); // Still only 1 request
+        
+        // Call to different tag 2 - should hit API and cache separately
+        String differentTag = client.getTagName(2);
+        assertEquals("Second Tag", differentTag);
+        assertEquals(2, server.getRequestCount()); // Now 2 requests
+        
+        // Call to tag 2 again - should use cache
+        String secondDifferentTag = client.getTagName(2);
+        assertEquals("Second Tag", secondDifferentTag);
+        assertEquals(2, server.getRequestCount()); // Still 2 requests
+        
+        // Original tag should still be cached
+        String thirdName = client.getTagName(1);
+        assertEquals("First Tag", thirdName);
+        assertEquals(2, server.getRequestCount()); // Still 2 requests
+        
+        server.shutdown();
+    }
+
+    @Test
+    void shouldCacheFailedLookups() throws Exception {
+        MockWebServer server = new MockWebServer();
+        
+        // Mock failed response
+        server.enqueue(new MockResponse()
+                .setResponseCode(404)
+                .setBody("{\"error\": \"Tag not found\"}"));
+        server.start();
+
+        String baseUrl = server.url("/").toString().replaceAll("/$", "");
+        DxrClient client = new DxrClient(baseUrl, "test-key");
+        
+        // First call - should hit API and cache the fallback name
+        String firstName = client.getTagName(99);
+        assertEquals("Tag 99", firstName);
+        assertEquals(1, server.getRequestCount());
+        
+        // Second call immediately - should use cache (no additional API call)
+        String secondName = client.getTagName(99);
+        assertEquals("Tag 99", secondName);
+        assertEquals(1, server.getRequestCount()); // Still only 1 request
+        
+        server.shutdown();
+    }
+}

@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocketFactory;
@@ -21,11 +22,14 @@ import java.time.Duration;
 
 class DxrClient {
     private static final Logger logger = LoggerFactory.getLogger(DxrClient.class);
+    private static final long TAG_CACHE_EXPIRY_MS = 5 * 60 * 1000L; // 5 minutes
+    
     record JobStatus(String state, long datasourceScanId, String errorMessage) {}
     record AnnotationStat(int id, int count) {}
     record MetadataItem(int id, String value) {}
     record TagItem(int id, String name) {}
     record ClassificationData(java.util.List<MetadataItem> extractedMetadata, java.util.List<TagItem> tags, String category, java.util.List<AnnotationStat> annotations) {}
+    record CachedTagName(String name, long timestamp) {}
 
     private final RetryPolicy<Response> retryPolicy = RetryPolicy.<Response>builder()
             .handle(IOException.class)
@@ -88,6 +92,7 @@ class DxrClient {
     private final String baseUrl;
     private final String apiKey;
     private final OkHttpClient client = getUnsafeOkHttpClient();
+    private final ConcurrentHashMap<Integer, CachedTagName> tagNameCache = new ConcurrentHashMap<>();
 
     DxrClient(String baseUrl, String apiKey) {
         this.baseUrl = baseUrl;
@@ -188,6 +193,16 @@ class DxrClient {
     }
 
     String getTagName(int tagId) throws IOException {
+        // Check cache first
+        CachedTagName cached = tagNameCache.get(tagId);
+        long currentTime = System.currentTimeMillis();
+        
+        if (cached != null && (currentTime - cached.timestamp()) < TAG_CACHE_EXPIRY_MS) {
+            logger.debug("Using cached tag name for tag {}: {}", tagId, cached.name());
+            return cached.name();
+        }
+        
+        // Cache miss or expired, fetch from API
         Request request = new Request.Builder()
                 .url(baseUrl + "/tags/" + tagId)
                 .header("Authorization", "Bearer " + apiKey)
@@ -195,18 +210,35 @@ class DxrClient {
                 .build();
         try (Response response = executeWithRetry(request)) {
             String body = response.body() != null ? response.body().string() : "";
+            String tagName;
+            
             if (!response.isSuccessful()) {
                 String errorMsg = "Tag fetch failed: HTTP " + response.code() + " - " + body;
                 logger.error("Failed to fetch tag {} details: {}", tagId, errorMsg);
                 // Return a fallback name instead of throwing exception to not break the entire response
-                return "Tag " + tagId;
+                tagName = "Tag " + tagId;
+            } else {
+                JSONObject obj = new JSONObject(body);
+                tagName = obj.optString("name", "Tag " + tagId);
+                logger.debug("Fetched tag name for tag {}: {}", tagId, tagName);
             }
-            JSONObject obj = new JSONObject(body);
-            return obj.optString("name", "Tag " + tagId);
+            
+            // Cache the result (even fallback names to avoid repeated failed API calls)
+            tagNameCache.put(tagId, new CachedTagName(tagName, currentTime));
+            return tagName;
         }
     }
 
+    private void cleanupExpiredTagCacheEntries() {
+        long currentTime = System.currentTimeMillis();
+        tagNameCache.entrySet().removeIf(entry -> 
+            (currentTime - entry.getValue().timestamp()) >= TAG_CACHE_EXPIRY_MS);
+    }
+
     ClassificationData getTagIds(long scanId) throws IOException {
+        // Cleanup expired cache entries periodically
+        cleanupExpiredTagCacheEntries();
+        
         JSONObject item = new JSONObject()
                 .put("parameter", "dxr#datasource_scan_id")
                 .put("value", scanId)
