@@ -24,7 +24,8 @@ class DxrClient {
     record JobStatus(String state, long datasourceScanId, String errorMessage) {}
     record AnnotationStat(int id, int count) {}
     record MetadataItem(int id, String value) {}
-    record ClassificationData(java.util.List<MetadataItem> extractedMetadata, java.util.List<String> annotators, java.util.List<String> labels, String aiCategory, java.util.List<AnnotationStat> annotationResults) {}
+    record TagItem(int id, String name) {}
+    record ClassificationData(java.util.List<MetadataItem> extractedMetadata, java.util.List<TagItem> tags, String category, java.util.List<AnnotationStat> annotations) {}
 
     private final RetryPolicy<Response> retryPolicy = RetryPolicy.<Response>builder()
             .handle(IOException.class)
@@ -186,6 +187,25 @@ class DxrClient {
         }
     }
 
+    String getTagName(int tagId) throws IOException {
+        Request request = new Request.Builder()
+                .url(baseUrl + "/tags/" + tagId)
+                .header("Authorization", "Bearer " + apiKey)
+                .get()
+                .build();
+        try (Response response = executeWithRetry(request)) {
+            String body = response.body() != null ? response.body().string() : "";
+            if (!response.isSuccessful()) {
+                String errorMsg = "Tag fetch failed: HTTP " + response.code() + " - " + body;
+                logger.error("Failed to fetch tag {} details: {}", tagId, errorMsg);
+                // Return a fallback name instead of throwing exception to not break the entire response
+                return "Tag " + tagId;
+            }
+            JSONObject obj = new JSONObject(body);
+            return obj.optString("name", "Tag " + tagId);
+        }
+    }
+
     ClassificationData getTagIds(long scanId) throws IOException {
         JSONObject item = new JSONObject()
                 .put("parameter", "dxr#datasource_scan_id")
@@ -222,9 +242,8 @@ class DxrClient {
                 throw new IOException(errorMsg);
             }
             java.util.Map<Integer, String> extractedMetadataMap = new java.util.HashMap<>();
-            java.util.List<String> annotators = new java.util.ArrayList<>();
-            java.util.List<String> labels = new java.util.ArrayList<>();
-            String aiCategory = null;
+            java.util.Set<Integer> tagIds = new java.util.HashSet<>();
+            String category = null;
             java.util.Map<Integer, Integer> annotationCounts = new java.util.HashMap<>();
 
             JSONObject obj = new JSONObject(respBody);
@@ -265,47 +284,26 @@ class DxrClient {
                                 }
                             }
 
-                            // Extract annotators
-                            if (src.has("annotators")) {
-                                Object annotatorsValue = src.get("annotators");
-                                if (annotatorsValue instanceof JSONArray annotatorsArray) {
-                                    for (int j = 0; j < annotatorsArray.length(); j++) {
-                                        String annotator = annotatorsArray.optString(j);
-                                        if (annotator != null && !annotator.isEmpty() && !annotators.contains(annotator)) {
-                                            annotators.add(annotator);
+                            // Extract tags from dxr#tags
+                            if (src.has("dxr#tags")) {
+                                Object tagsValue = src.get("dxr#tags");
+                                if (tagsValue instanceof JSONArray tagsArray) {
+                                    for (int j = 0; j < tagsArray.length(); j++) {
+                                        try {
+                                            int tagId = tagsArray.getInt(j);
+                                            tagIds.add(tagId);
+                                        } catch (Exception e) {
+                                            logger.debug("Skipping invalid tag ID: {}", tagsArray.opt(j));
                                         }
-                                    }
-                                } else if (annotatorsValue != null) {
-                                    String annotator = String.valueOf(annotatorsValue);
-                                    if (!annotator.isEmpty() && !annotators.contains(annotator)) {
-                                        annotators.add(annotator);
-                                    }
-                                }
-                            }
-
-                            // Extract labels
-                            if (src.has("labels")) {
-                                Object labelsValue = src.get("labels");
-                                if (labelsValue instanceof JSONArray labelsArray) {
-                                    for (int j = 0; j < labelsArray.length(); j++) {
-                                        String label = labelsArray.optString(j);
-                                        if (label != null && !label.isEmpty() && !labels.contains(label)) {
-                                            labels.add(label);
-                                        }
-                                    }
-                                } else if (labelsValue != null) {
-                                    String label = String.valueOf(labelsValue);
-                                    if (!label.isEmpty() && !labels.contains(label)) {
-                                        labels.add(label);
                                     }
                                 }
                             }
 
                             // Extract ai#category (take the first non-null value found)
-                            if (aiCategory == null && src.has("ai#category")) {
-                                Object aiCategoryValue = src.get("ai#category");
-                                if (aiCategoryValue != null) {
-                                    aiCategory = String.valueOf(aiCategoryValue);
+                            if (category == null && src.has("ai#category")) {
+                                Object categoryValue = src.get("ai#category");
+                                if (categoryValue != null) {
+                                    category = String.valueOf(categoryValue);
                                 }
                             }
                         }
@@ -320,18 +318,32 @@ class DxrClient {
                 .toList();
             
             // Convert annotation counts map to list of AnnotationStat records
-            java.util.List<AnnotationStat> annotationResults = annotationCounts.entrySet().stream()
+            java.util.List<AnnotationStat> annotations = annotationCounts.entrySet().stream()
                 .map(entry -> new AnnotationStat(entry.getKey(), entry.getValue()))
                 .sorted((a, b) -> Integer.compare(a.id(), b.id()))
                 .toList();
             
-            if (extractedMetadata.isEmpty() && annotators.isEmpty() && labels.isEmpty() && aiCategory == null && annotationResults.isEmpty()) {
+            // Convert tag IDs to list of TagItem records with names
+            java.util.List<TagItem> tags = tagIds.stream()
+                .map(tagId -> {
+                    try {
+                        String tagName = getTagName(tagId);
+                        return new TagItem(tagId, tagName);
+                    } catch (IOException e) {
+                        logger.warn("Failed to fetch name for tag {}: {}. Using fallback name.", tagId, e.getMessage());
+                        return new TagItem(tagId, "Tag " + tagId);
+                    }
+                })
+                .sorted((a, b) -> Integer.compare(a.id(), b.id()))
+                .toList();
+            
+            if (extractedMetadata.isEmpty() && tags.isEmpty() && category == null && annotations.isEmpty()) {
                 logger.warn("No classification data found for scan ID {}", scanId);
             } else {
-                logger.info("Successfully fetched search results for scan ID {}: {} metadata fields, {} annotators, {} labels, {} annotation results, ai#category: {}",
-                    scanId, extractedMetadata.size(), annotators.size(), labels.size(), annotationResults.size(), aiCategory);
+                logger.info("Successfully fetched search results for scan ID {}: {} metadata fields, {} tags, {} annotations, category: {}",
+                    scanId, extractedMetadata.size(), tags.size(), annotations.size(), category);
             }
-            return new ClassificationData(extractedMetadata, annotators, labels, aiCategory, annotationResults);
+            return new ClassificationData(extractedMetadata, tags, category, annotations);
         }
     }
 }

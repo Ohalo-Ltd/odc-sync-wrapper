@@ -117,7 +117,6 @@ public class FileBatchingService {
                             "FAILED",
                             Collections.emptyList(),
                             Collections.emptyList(),
-                            Collections.emptyList(),
                             null,
                             Collections.emptyList()
                         );
@@ -146,7 +145,6 @@ public class FileBatchingService {
                         FileClassificationResult result = new FileClassificationResult(
                             request.file().getOriginalFilename(),
                             "FAILED",
-                            Collections.emptyList(),
                             Collections.emptyList(),
                             Collections.emptyList(),
                             null,
@@ -217,20 +215,21 @@ public class FileBatchingService {
                         java.util.List<MetadataItem> extractedMetadata = classificationData.extractedMetadata().stream()
                             .map(item -> new MetadataItem(item.id(), item.value()))
                             .toList();
-                        java.util.List<AnnotationStat> annotationResults = classificationData.annotationResults().stream()
+                        java.util.List<AnnotationStat> annotations = classificationData.annotations().stream()
                             .map(stat -> new AnnotationStat(stat.id(), stat.count()))
                             .toList();
-                        logger.info("File '{}' classified successfully with {} metadata fields, {} annotators, {} labels, {} annotation results", 
-                            fileData.originalFilename(), extractedMetadata.size(),
-                            classificationData.annotators().size(), classificationData.labels().size(), annotationResults.size());
+                        java.util.List<TagItem> tags = classificationData.tags().stream()
+                            .map(tag -> new TagItem(tag.id(), tag.name()))
+                            .toList();
+                        logger.info("File '{}' classified successfully with {} metadata fields, {} tags, {} annotations", 
+                            fileData.originalFilename(), extractedMetadata.size(), tags.size(), annotations.size());
                         FileClassificationResult result = new FileClassificationResult(
                             fileData.originalFilename(),
                             "FINISHED",
                             extractedMetadata,
-                            classificationData.annotators(),
-                            classificationData.labels(),
-                            classificationData.aiCategory(),
-                            annotationResults
+                            tags,
+                            classificationData.category(),
+                            annotations
                         );
                         request.result().complete(result);
                     }
@@ -251,7 +250,6 @@ public class FileBatchingService {
                             "FAILED",
                             Collections.emptyList(),
                             Collections.emptyList(),
-                            Collections.emptyList(),
                             null,
                             Collections.emptyList()
                         );
@@ -268,7 +266,6 @@ public class FileBatchingService {
                     FileClassificationResult result = new FileClassificationResult(
                         request.file().getOriginalFilename(),
                         "FAILED",
-                        Collections.emptyList(),
                         Collections.emptyList(),
                         Collections.emptyList(),
                         null,
@@ -311,5 +308,6 @@ public class FileBatchingService {
 
     public static record AnnotationStat(int id, int count) {}
     public static record MetadataItem(int id, String value) {}
-    public static record FileClassificationResult(String filename, String status, java.util.List<MetadataItem> extractedMetadata, java.util.List<String> annotators, java.util.List<String> labels, String aiCategory, java.util.List<AnnotationStat> annotationResults) {}
+    public static record TagItem(int id, String name) {}
+    public static record FileClassificationResult(String filename, String status, java.util.List<MetadataItem> extractedMetadata, java.util.List<TagItem> tags, String category, java.util.List<AnnotationStat> annotations) {}
 }

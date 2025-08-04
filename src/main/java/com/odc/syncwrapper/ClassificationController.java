@@ -57,7 +57,6 @@ public class ClassificationController {
                 "FAILED",
                 java.util.Collections.emptyList(),
                 java.util.Collections.emptyList(),
-                java.util.Collections.emptyList(),
                 null,
                 java.util.Collections.emptyList()
             );
@@ -76,8 +75,8 @@ public class ClassificationController {
             FileBatchingService.FileClassificationResult result = future.get(1200, TimeUnit.SECONDS);
             
             if ("FINISHED".equals(result.status())) {
-                logger.info("Classification completed successfully for '{}' with {} metadata fields, {} annotators, {} labels, {} annotation results", 
-                    result.filename(), result.extractedMetadata().size(), result.annotators().size(), result.labels().size(), result.annotationResults().size());
+                logger.info("Classification completed successfully for '{}' with {} metadata fields, {} tags, {} annotations", 
+                    result.filename(), result.extractedMetadata().size(), result.tags().size(), result.annotations().size());
             } else {
                 logger.warn("Classification failed for '{}' with status: {}", 
                     result.filename(), result.status());
@@ -91,7 +90,6 @@ public class ClassificationController {
             FileBatchingService.FileClassificationResult errorResult = new FileBatchingService.FileClassificationResult(
                 file.getOriginalFilename(),
                 "FAILED",
-                java.util.Collections.emptyList(),
                 java.util.Collections.emptyList(),
                 java.util.Collections.emptyList(),
                 null,
