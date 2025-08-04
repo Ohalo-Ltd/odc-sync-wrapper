@@ -26,10 +26,11 @@ class DxrClient {
     
     record JobStatus(String state, long datasourceScanId, String errorMessage) {}
     record AnnotationStat(int id, int count) {}
-    record MetadataItem(int id, String value) {}
+    record MetadataItem(int id, String name, String value) {}
     record TagItem(int id, String name) {}
     record ClassificationData(java.util.List<MetadataItem> extractedMetadata, java.util.List<TagItem> tags, String category, java.util.List<AnnotationStat> annotations) {}
     record CachedTagName(String name, long timestamp) {}
+    record CachedMetadataName(String name, long timestamp) {}
 
     private final RetryPolicy<Response> retryPolicy = RetryPolicy.<Response>builder()
             .handle(IOException.class)
@@ -93,6 +94,7 @@ class DxrClient {
     private final String apiKey;
     private final OkHttpClient client = getUnsafeOkHttpClient();
     private final ConcurrentHashMap<Integer, CachedTagName> tagNameCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Integer, CachedMetadataName> metadataNameCache = new ConcurrentHashMap<>();
 
     DxrClient(String baseUrl, String apiKey) {
         this.baseUrl = baseUrl;
@@ -229,15 +231,59 @@ class DxrClient {
         }
     }
 
+    String getMetadataExtractorName(int metadataExtractorId) throws IOException {
+        // Check cache first
+        CachedMetadataName cached = metadataNameCache.get(metadataExtractorId);
+        long currentTime = System.currentTimeMillis();
+        
+        if (cached != null && (currentTime - cached.timestamp()) < TAG_CACHE_EXPIRY_MS) {
+            logger.debug("Using cached metadata extractor name for ID {}: {}", metadataExtractorId, cached.name());
+            return cached.name();
+        }
+        
+        // Cache miss or expired, fetch from API
+        Request request = new Request.Builder()
+                .url(baseUrl + "/metadata-extractors/" + metadataExtractorId)
+                .header("Authorization", "Bearer " + apiKey)
+                .get()
+                .build();
+        try (Response response = executeWithRetry(request)) {
+            String body = response.body() != null ? response.body().string() : "";
+            String extractorName;
+            
+            if (!response.isSuccessful()) {
+                String errorMsg = "Metadata extractor fetch failed: HTTP " + response.code() + " - " + body;
+                logger.error("Failed to fetch metadata extractor {} details: {}", metadataExtractorId, errorMsg);
+                // Return a fallback name instead of throwing exception to not break the entire response
+                extractorName = "Metadata " + metadataExtractorId;
+            } else {
+                JSONObject obj = new JSONObject(body);
+                extractorName = obj.optString("name", "Metadata " + metadataExtractorId);
+                logger.debug("Fetched metadata extractor name for ID {}: {}", metadataExtractorId, extractorName);
+            }
+            
+            // Cache the result (even fallback names to avoid repeated failed API calls)
+            metadataNameCache.put(metadataExtractorId, new CachedMetadataName(extractorName, currentTime));
+            return extractorName;
+        }
+    }
+
     private void cleanupExpiredTagCacheEntries() {
         long currentTime = System.currentTimeMillis();
         tagNameCache.entrySet().removeIf(entry -> 
             (currentTime - entry.getValue().timestamp()) >= TAG_CACHE_EXPIRY_MS);
     }
 
+    private void cleanupExpiredMetadataCacheEntries() {
+        long currentTime = System.currentTimeMillis();
+        metadataNameCache.entrySet().removeIf(entry -> 
+            (currentTime - entry.getValue().timestamp()) >= TAG_CACHE_EXPIRY_MS);
+    }
+
     ClassificationData getTagIds(long scanId) throws IOException {
         // Cleanup expired cache entries periodically
         cleanupExpiredTagCacheEntries();
+        cleanupExpiredMetadataCacheEntries();
         
         JSONObject item = new JSONObject()
                 .put("parameter", "dxr#datasource_scan_id")
@@ -343,9 +389,17 @@ class DxrClient {
                 }
             }
             
-            // Convert metadata map to list of MetadataItem records  
+            // Convert metadata map to list of MetadataItem records with names
             java.util.List<MetadataItem> extractedMetadata = extractedMetadataMap.entrySet().stream()
-                .map(entry -> new MetadataItem(entry.getKey(), entry.getValue()))
+                .map(entry -> {
+                    try {
+                        String extractorName = getMetadataExtractorName(entry.getKey());
+                        return new MetadataItem(entry.getKey(), extractorName, entry.getValue());
+                    } catch (IOException e) {
+                        logger.warn("Failed to fetch name for metadata extractor {}: {}. Using fallback name.", entry.getKey(), e.getMessage());
+                        return new MetadataItem(entry.getKey(), "Metadata " + entry.getKey(), entry.getValue());
+                    }
+                })
                 .sorted((a, b) -> Integer.compare(a.id(), b.id()))
                 .toList();
             

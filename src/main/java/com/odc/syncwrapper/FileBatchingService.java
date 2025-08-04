@@ -213,7 +213,7 @@ public class FileBatchingService {
                         FileData fileData = fileDataList.get(i);
                         // Convert DxrClient records to FileBatchingService records
                         java.util.List<MetadataItem> extractedMetadata = classificationData.extractedMetadata().stream()
-                            .map(item -> new MetadataItem(item.id(), item.value()))
+                            .map(item -> new MetadataItem(item.id(), item.name(), item.value()))
                             .toList();
                         java.util.List<AnnotationStat> annotations = classificationData.annotations().stream()
                             .map(stat -> new AnnotationStat(stat.id(), stat.count()))
@@ -307,7 +307,7 @@ public class FileBatchingService {
     public static record FileData(String originalFilename, String enhancedFilename, byte[] content, String contentType) {}
 
     public static record AnnotationStat(int id, int count) {}
-    public static record MetadataItem(int id, String value) {}
+    public static record MetadataItem(int id, String name, String value) {}
     public static record TagItem(int id, String name) {}
     public static record FileClassificationResult(String filename, String status, java.util.List<MetadataItem> extractedMetadata, java.util.List<TagItem> tags, String category, java.util.List<AnnotationStat> annotations) {}
 }

@@ -34,6 +34,13 @@ class MetadataExtractionTest {
         server.enqueue(new MockResponse()
                 .setResponseCode(200)
                 .setBody(responseBody));
+        // Mock metadata extractor name responses for IDs 1 and 2
+        server.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setBody("{\"id\": 1, \"name\": \"SSN Detector\"}"));
+        server.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setBody("{\"id\": 2, \"name\": \"Credit Card Detector\"}"));
         // Mock tag name responses for tag IDs 1 and 2
         server.enqueue(new MockResponse()
                 .setResponseCode(200)
@@ -52,10 +59,12 @@ class MetadataExtractionTest {
         List<DxrClient.MetadataItem> metadata = data.extractedMetadata();
         assertEquals(2, metadata.size());
         
-        // Check that metadata items are sorted by ID and have correct values
+        // Check that metadata items are sorted by ID and have correct names and values
         assertEquals(1, metadata.get(0).id());
+        assertEquals("SSN Detector", metadata.get(0).name());
         assertEquals("SSN", metadata.get(0).value());
         assertEquals(2, metadata.get(1).id());
+        assertEquals("Credit Card Detector", metadata.get(1).name());
         assertEquals("Credit Card", metadata.get(1).value());
         
         // Verify tags extraction with names
@@ -91,7 +100,7 @@ class MetadataExtractionTest {
         server.enqueue(new MockResponse()
                 .setResponseCode(200)
                 .setBody(responseBody));
-        // Mock tag name response for tag ID 3
+        // Mock tag name response for tag ID 3  
         server.enqueue(new MockResponse()
                 .setResponseCode(200)
                 .setBody("{\"id\": 3, \"name\": \"Public Data\"}"));

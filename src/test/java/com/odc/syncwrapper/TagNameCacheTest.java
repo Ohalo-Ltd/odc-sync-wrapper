@@ -32,6 +32,10 @@ class TagNameCacheTest {
         server.enqueue(new MockResponse()
                 .setResponseCode(200)
                 .setBody(searchResponse));
+        // Mock metadata extractor name response  
+        server.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setBody("{\"id\": 1, \"name\": \"SSN Detector\"}"));
         // Mock tag name response - should only be called once due to caching
         server.enqueue(new MockResponse()
                 .setResponseCode(200)
@@ -48,12 +52,15 @@ class TagNameCacheTest {
         assertEquals(1, data.tags().get(0).id());
         assertEquals("Sensitive Data", data.tags().get(0).name());
         
-        // Verify only 2 requests were made: 1 search + 1 tag name (not 2 tag name calls)
-        assertEquals(2, server.getRequestCount());
+        // Verify only 3 requests were made: 1 search + 1 metadata extractor + 1 tag name 
+        assertEquals(3, server.getRequestCount());
         
         // Verify the requests
         RecordedRequest searchRequest = server.takeRequest();
         assertTrue(searchRequest.getPath().contains("/indexed-files/search"));
+        
+        RecordedRequest metadataRequest = server.takeRequest();
+        assertTrue(metadataRequest.getPath().contains("/metadata-extractors/1"));
         
         RecordedRequest tagRequest = server.takeRequest();
         assertTrue(tagRequest.getPath().contains("/tags/1"));
@@ -126,6 +133,33 @@ class TagNameCacheTest {
         // Second call immediately - should use cache (no additional API call)
         String secondName = client.getTagName(99);
         assertEquals("Tag 99", secondName);
+        assertEquals(1, server.getRequestCount()); // Still only 1 request
+        
+        server.shutdown();
+    }
+
+
+    @Test
+    void shouldCacheFailedMetadataExtractorLookups() throws Exception {
+        MockWebServer server = new MockWebServer();
+        
+        // Mock failed metadata extractor response
+        server.enqueue(new MockResponse()
+                .setResponseCode(404)
+                .setBody("{\"error\": \"Metadata extractor not found\"}"));
+        server.start();
+
+        String baseUrl = server.url("/").toString().replaceAll("/$", "");
+        DxrClient client = new DxrClient(baseUrl, "test-key");
+        
+        // First call - should hit API and cache the fallback name
+        String firstName = client.getMetadataExtractorName(99);
+        assertEquals("Metadata 99", firstName);
+        assertEquals(1, server.getRequestCount());
+        
+        // Second call immediately - should use cache (no additional API call)
+        String secondName = client.getMetadataExtractorName(99);
+        assertEquals("Metadata 99", secondName);
         assertEquals(1, server.getRequestCount()); // Still only 1 request
         
         server.shutdown();
