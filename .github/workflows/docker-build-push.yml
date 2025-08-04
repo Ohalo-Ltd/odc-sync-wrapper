@@ -3,6 +3,7 @@ name: Build and Push Docker Image
 on:
   push:
     branches: [ '*' ]
+    tags: [ 'v*' ]
 
 env:
   REGISTRY: ghcr.io
@@ -35,7 +36,11 @@ jobs:
           # Convert repository name to lowercase for Docker tag compatibility
           REPO_LOWER=$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
           
-          if [ "${{ github.ref_name }}" = "main" ]; then
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            # Extract version from tag (remove 'v' prefix if present)
+            VERSION=$(echo "${{ github.ref_name }}" | sed 's/^v//')
+            echo "tags=${{ env.REGISTRY }}/${REPO_LOWER}:${VERSION}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref_name }}" = "main" ]; then
             echo "tags=${{ env.REGISTRY }}/${REPO_LOWER}:latest" >> $GITHUB_OUTPUT
           else
             echo "tags=${{ env.REGISTRY }}/${REPO_LOWER}:${{ github.ref_name }}" >> $GITHUB_OUTPUT
