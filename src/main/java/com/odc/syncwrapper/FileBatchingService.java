@@ -5,6 +5,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import jakarta.annotation.PostConstruct;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.*;
@@ -13,6 +15,8 @@ import java.util.UUID;
 
 @Service
 public class FileBatchingService {
+
+    private static final Logger logger = LoggerFactory.getLogger(FileBatchingService.class);
 
     private static final long FAILED_RETRY_BACKOFF_MS = 10_000L;
     private static final int FAILED_RETRY_ATTEMPTS = 3;
@@ -104,11 +108,17 @@ public class FileBatchingService {
 
                 // If no API key is available, fail all requests
                 if (effectiveApiKey == null || effectiveApiKey.isEmpty()) {
+                    String errorMsg = "No API key available for batch processing";
+                    logger.error("{} - failing {} files in batch", errorMsg, batch.size());
                     for (FileRequest request : batch) {
+                        logger.error("File '{}' failed: {}", request.file().getOriginalFilename(), errorMsg);
                         FileClassificationResult result = new FileClassificationResult(
                             request.file().getOriginalFilename(),
                             "FAILED",
-                            Collections.emptyMap()
+                            Collections.emptyList(),
+                            Collections.emptyList(),
+                            null,
+                            Collections.emptyList()
                         );
                         request.result().complete(result);
                     }
@@ -131,7 +141,16 @@ public class FileBatchingService {
                         );
                         fileDataList.add(fileData);
                     } catch (IOException e) {
-                        request.result().completeExceptionally(e);
+                        logger.error("Failed to read file '{}': {}", request.file().getOriginalFilename(), e.getMessage(), e);
+                        FileClassificationResult result = new FileClassificationResult(
+                            request.file().getOriginalFilename(),
+                            "FAILED",
+                            Collections.emptyList(),
+                            Collections.emptyList(),
+                            null,
+                            Collections.emptyList()
+                        );
+                        request.result().complete(result);
                     }
                 }
 
@@ -139,54 +158,120 @@ public class FileBatchingService {
                     return;
                 }
 
+                logger.info("Submitting batch of {} files to datasource {} for processing", fileDataList.size(), datasourceId);
                 String jobId = effectiveClient.submitJob(datasourceId, fileDataList);
+                logger.info("Submitted job {} to datasource {} for {} files", jobId, datasourceId, fileDataList.size());
 
                 DxrClient.JobStatus status;
-                int attempts = 0;
+                int attemptNumber = 1; // Start with attempt 1 (the initial submission)
+                
                 do {
+                    // Wait for job to complete
                     do {
                         Thread.sleep(1000);
                         status = effectiveClient.getJobStatus(datasourceId, jobId);
+                        logger.debug("Job {} status: {}", jobId, status.state());
                     } while (!"FINISHED".equals(status.state()) && !"FAILED".equals(status.state()));
 
                     if (!"FAILED".equals(status.state())) {
-                        break;
+                        break; // Job succeeded, exit retry loop
                     }
 
-                    if (attempts >= FAILED_RETRY_ATTEMPTS) {
+                    if (status.errorMessage() != null && !status.errorMessage().isEmpty()) {
+                        logger.warn("Job {} failed (attempt {}/{}). Status: {} - Error: {}", 
+                            jobId, attemptNumber, FAILED_RETRY_ATTEMPTS, status.state(), status.errorMessage());
+                    } else {
+                        logger.warn("Job {} failed (attempt {}/{}). Status: {}", 
+                            jobId, attemptNumber, FAILED_RETRY_ATTEMPTS, status.state());
+                    }
+                    
+                    // Check if we've exhausted all attempts
+                    if (attemptNumber >= FAILED_RETRY_ATTEMPTS) {
+                        if (status.errorMessage() != null && !status.errorMessage().isEmpty()) {
+                            logger.error("Job {} failed after {} attempts. Final status: {} - Error: {}", 
+                                jobId, FAILED_RETRY_ATTEMPTS, status.state(), status.errorMessage());
+                        } else {
+                            logger.error("Job {} failed after {} attempts. Final status: {}", 
+                                jobId, FAILED_RETRY_ATTEMPTS, status.state());
+                        }
                         break;
                     }
-                    attempts++;
+                    
+                    // Retry the job submission
+                    attemptNumber++;
+                    logger.info("Retrying job submission (attempt {}/{}) after {}ms delay", attemptNumber, FAILED_RETRY_ATTEMPTS, FAILED_RETRY_BACKOFF_MS);
                     Thread.sleep(FAILED_RETRY_BACKOFF_MS);
                     jobId = effectiveClient.submitJob(datasourceId, fileDataList);
+                    logger.info("Retried job submission, new job ID: {}", jobId);
                 } while (true);
 
                 if ("FINISHED".equals(status.state())) {
+                    logger.info("Job {} completed successfully. Fetching classification results for {} files", jobId, batch.size());
                     DxrClient.ClassificationData classificationData = effectiveClient.getTagIds(status.datasourceScanId());
                     for (int i = 0; i < batch.size() && i < fileDataList.size(); i++) {
                         FileRequest request = batch.get(i);
                         FileData fileData = fileDataList.get(i);
+                        // Convert DxrClient records to FileBatchingService records
+                        java.util.List<MetadataItem> extractedMetadata = classificationData.extractedMetadata().stream()
+                            .map(item -> new MetadataItem(item.id(), item.name(), item.value()))
+                            .toList();
+                        java.util.List<AnnotationStat> annotations = classificationData.annotations().stream()
+                            .map(stat -> new AnnotationStat(stat.id(), stat.name(), stat.count()))
+                            .toList();
+                        java.util.List<TagItem> tags = classificationData.tags().stream()
+                            .map(tag -> new TagItem(tag.id(), tag.name()))
+                            .toList();
+                        logger.info("File '{}' classified successfully with {} metadata fields, {} tags, {} annotations", 
+                            fileData.originalFilename(), extractedMetadata.size(), tags.size(), annotations.size());
                         FileClassificationResult result = new FileClassificationResult(
                             fileData.originalFilename(),
                             "FINISHED",
-                            classificationData.extractedMetadata()
+                            extractedMetadata,
+                            tags,
+                            classificationData.category(),
+                            annotations
                         );
                         request.result().complete(result);
                     }
                 } else {
+                    String errorMsg;
+                    if (status.errorMessage() != null && !status.errorMessage().isEmpty()) {
+                        errorMsg = String.format("Job %s failed after %d attempts. Final status: %s - Error: %s", 
+                            jobId, attemptNumber, status.state(), status.errorMessage());
+                    } else {
+                        errorMsg = String.format("Job %s failed after %d attempts. Final status: %s", 
+                            jobId, attemptNumber, status.state());
+                    }
+                    logger.error("{} - failing {} files in batch", errorMsg, batch.size());
                     for (FileRequest request : batch) {
+                        logger.error("File '{}' failed: {}", request.file().getOriginalFilename(), errorMsg);
                         FileClassificationResult result = new FileClassificationResult(
                             request.file().getOriginalFilename(),
                             "FAILED",
-                            Collections.emptyMap()
+                            Collections.emptyList(),
+                            Collections.emptyList(),
+                            null,
+                            Collections.emptyList()
                         );
                         request.result().complete(result);
                     }
                 }
 
             } catch (Exception e) {
+                String errorMsg = "Batch processing failed: " + e.getMessage();
+                logger.error("{} - failing {} files in batch", errorMsg, batch.size(), e);
                 for (FileRequest request : batch) {
-                    request.result().completeExceptionally(e);
+                    logger.error("File '{}' failed due to batch processing error: {}", 
+                        request.file().getOriginalFilename(), e.getMessage());
+                    FileClassificationResult result = new FileClassificationResult(
+                        request.file().getOriginalFilename(),
+                        "FAILED",
+                        Collections.emptyList(),
+                        Collections.emptyList(),
+                        null,
+                        Collections.emptyList()
+                    );
+                    request.result().complete(result);
                 }
             }
         });
@@ -221,5 +306,8 @@ public class FileBatchingService {
 
     public static record FileData(String originalFilename, String enhancedFilename, byte[] content, String contentType) {}
 
-    public static record FileClassificationResult(String filename, String status, java.util.Map<String, String> extractedMetadata) {}
+    public static record AnnotationStat(int id, String name, int count) {}
+    public static record MetadataItem(int id, String name, String value) {}
+    public static record TagItem(int id, String name) {}
+    public static record FileClassificationResult(String filename, String status, java.util.List<MetadataItem> extractedMetadata, java.util.List<TagItem> tags, String category, java.util.List<AnnotationStat> annotations) {}
 }

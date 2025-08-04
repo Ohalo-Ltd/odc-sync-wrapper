@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocketFactory;
@@ -21,8 +22,16 @@ import java.time.Duration;
 
 class DxrClient {
     private static final Logger logger = LoggerFactory.getLogger(DxrClient.class);
-    record JobStatus(String state, long datasourceScanId) {}
-    record ClassificationData(java.util.Map<String, String> extractedMetadata) {}
+    private static final long TAG_CACHE_EXPIRY_MS = 5 * 60 * 1000L; // 5 minutes
+    
+    record JobStatus(String state, long datasourceScanId, String errorMessage) {}
+    record AnnotationStat(int id, String name, int count) {}
+    record MetadataItem(int id, String name, String value) {}
+    record TagItem(int id, String name) {}
+    record ClassificationData(java.util.List<MetadataItem> extractedMetadata, java.util.List<TagItem> tags, String category, java.util.List<AnnotationStat> annotations) {}
+    record CachedTagName(String name, long timestamp) {}
+    record CachedMetadataName(String name, long timestamp) {}
+    record CachedAnnotationName(String name, long timestamp) {}
 
     private final RetryPolicy<Response> retryPolicy = RetryPolicy.<Response>builder()
             .handle(IOException.class)
@@ -85,6 +94,9 @@ class DxrClient {
     private final String baseUrl;
     private final String apiKey;
     private final OkHttpClient client = getUnsafeOkHttpClient();
+    private final ConcurrentHashMap<Integer, CachedTagName> tagNameCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Integer, CachedMetadataName> metadataNameCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Integer, CachedAnnotationName> annotationNameCache = new ConcurrentHashMap<>();
 
     DxrClient(String baseUrl, String apiKey) {
         this.baseUrl = baseUrl;
@@ -121,10 +133,14 @@ class DxrClient {
         try (Response response = executeWithRetry(request)) {
             String body = response.body() != null ? response.body().string() : "";
             if (!response.isSuccessful()) {
-                throw new IOException("Unexpected response: " + response.code() + " " + body);
+                String errorMsg = "Job submission failed: HTTP " + response.code() + " - " + body;
+                logger.error("Failed to submit job to datasource {}: {}", datasourceId, errorMsg);
+                throw new IOException(errorMsg);
             }
             JSONObject obj = new JSONObject(body);
-            return obj.getString("id");
+            String jobId = obj.getString("id");
+            logger.debug("Successfully submitted job {} to datasource {}", jobId, datasourceId);
+            return jobId;
         }
     }
 
@@ -138,15 +154,26 @@ class DxrClient {
         try (Response response = executeWithRetry(request)) {
             String body = response.body() != null ? response.body().string() : "";
             if (!response.isSuccessful()) {
-                throw new IOException("Unexpected response: " + response.code() + " " + body);
+                String errorMsg = "Job status check failed: HTTP " + response.code() + " - " + body;
+                logger.error("Failed to get status for job {} on datasource {}: {}", jobId, datasourceId, errorMsg);
+                throw new IOException(errorMsg);
             }
             JSONObject obj = new JSONObject(body);
             String state;
             long scanId = -1;
+            String errorMessage = null;
+            
             if (obj.optJSONObject("state") != null) {
                 JSONObject stateObj = obj.getJSONObject("state");
                 state = stateObj.optString("value", stateObj.optString("state", "UNKNOWN"));
                 scanId = stateObj.optLong("datasourceScanId", -1);
+                
+                // Extract error message if present
+                if (stateObj.has("errorMessage")) {
+                    errorMessage = stateObj.optString("errorMessage");
+                } else if (stateObj.has("message")) {
+                    errorMessage = stateObj.optString("message");
+                }
             } else {
                 state = obj.optString("state", "UNKNOWN");
                 if (obj.has("datasourceScanId")) {
@@ -154,12 +181,156 @@ class DxrClient {
                 } else if (obj.has("state.datasourceScanId")) {
                     scanId = obj.optLong("state.datasourceScanId", -1);
                 }
+                
+                // Extract error message from top level if present
+                if (obj.has("errorMessage")) {
+                    errorMessage = obj.optString("errorMessage");
+                } else if (obj.has("message")) {
+                    errorMessage = obj.optString("message");
+                } else if (obj.has("error")) {
+                    errorMessage = obj.optString("error");
+                }
             }
-            return new JobStatus(state, scanId);
+            
+            return new JobStatus(state, scanId, errorMessage);
         }
     }
 
+    String getTagName(int tagId) throws IOException {
+        // Check cache first
+        CachedTagName cached = tagNameCache.get(tagId);
+        long currentTime = System.currentTimeMillis();
+        
+        if (cached != null && (currentTime - cached.timestamp()) < TAG_CACHE_EXPIRY_MS) {
+            logger.debug("Using cached tag name for tag {}: {}", tagId, cached.name());
+            return cached.name();
+        }
+        
+        // Cache miss or expired, fetch from API
+        Request request = new Request.Builder()
+                .url(baseUrl + "/tags/" + tagId)
+                .header("Authorization", "Bearer " + apiKey)
+                .get()
+                .build();
+        try (Response response = executeWithRetry(request)) {
+            String body = response.body() != null ? response.body().string() : "";
+            String tagName;
+            
+            if (!response.isSuccessful()) {
+                String errorMsg = "Tag fetch failed: HTTP " + response.code() + " - " + body;
+                logger.error("Failed to fetch tag {} details: {}", tagId, errorMsg);
+                // Return a fallback name instead of throwing exception to not break the entire response
+                tagName = "Tag " + tagId;
+            } else {
+                JSONObject obj = new JSONObject(body);
+                tagName = obj.optString("name", "Tag " + tagId);
+                logger.debug("Fetched tag name for tag {}: {}", tagId, tagName);
+            }
+            
+            // Cache the result (even fallback names to avoid repeated failed API calls)
+            tagNameCache.put(tagId, new CachedTagName(tagName, currentTime));
+            return tagName;
+        }
+    }
+
+    String getMetadataExtractorName(int metadataExtractorId) throws IOException {
+        // Check cache first
+        CachedMetadataName cached = metadataNameCache.get(metadataExtractorId);
+        long currentTime = System.currentTimeMillis();
+        
+        if (cached != null && (currentTime - cached.timestamp()) < TAG_CACHE_EXPIRY_MS) {
+            logger.debug("Using cached metadata extractor name for ID {}: {}", metadataExtractorId, cached.name());
+            return cached.name();
+        }
+        
+        // Cache miss or expired, fetch from API
+        Request request = new Request.Builder()
+                .url(baseUrl + "/metadata-extractors/" + metadataExtractorId)
+                .header("Authorization", "Bearer " + apiKey)
+                .get()
+                .build();
+        try (Response response = executeWithRetry(request)) {
+            String body = response.body() != null ? response.body().string() : "";
+            String extractorName;
+            
+            if (!response.isSuccessful()) {
+                String errorMsg = "Metadata extractor fetch failed: HTTP " + response.code() + " - " + body;
+                logger.error("Failed to fetch metadata extractor {} details: {}", metadataExtractorId, errorMsg);
+                // Return a fallback name instead of throwing exception to not break the entire response
+                extractorName = "Metadata " + metadataExtractorId;
+            } else {
+                JSONObject obj = new JSONObject(body);
+                extractorName = obj.optString("name", "Metadata " + metadataExtractorId);
+                logger.debug("Fetched metadata extractor name for ID {}: {}", metadataExtractorId, extractorName);
+            }
+            
+            // Cache the result (even fallback names to avoid repeated failed API calls)
+            metadataNameCache.put(metadataExtractorId, new CachedMetadataName(extractorName, currentTime));
+            return extractorName;
+        }
+    }
+
+    private void cleanupExpiredTagCacheEntries() {
+        long currentTime = System.currentTimeMillis();
+        tagNameCache.entrySet().removeIf(entry -> 
+            (currentTime - entry.getValue().timestamp()) >= TAG_CACHE_EXPIRY_MS);
+    }
+
+    private void cleanupExpiredMetadataCacheEntries() {
+        long currentTime = System.currentTimeMillis();
+        metadataNameCache.entrySet().removeIf(entry -> 
+            (currentTime - entry.getValue().timestamp()) >= TAG_CACHE_EXPIRY_MS);
+    }
+
+    String getAnnotationName(int annotationId) throws IOException {
+        // Check cache first
+        CachedAnnotationName cached = annotationNameCache.get(annotationId);
+        long currentTime = System.currentTimeMillis();
+        
+        if (cached != null && (currentTime - cached.timestamp()) < TAG_CACHE_EXPIRY_MS) {
+            logger.debug("Using cached annotation name for ID {}: {}", annotationId, cached.name());
+            return cached.name();
+        }
+        
+        // Cache miss or expired, fetch from API
+        Request request = new Request.Builder()
+                .url(baseUrl + "/data-classes/" + annotationId)
+                .header("Authorization", "Bearer " + apiKey)
+                .get()
+                .build();
+        try (Response response = executeWithRetry(request)) {
+            String body = response.body() != null ? response.body().string() : "";
+            String annotationName;
+            
+            if (!response.isSuccessful()) {
+                String errorMsg = "Annotation fetch failed: HTTP " + response.code() + " - " + body;
+                logger.error("Failed to fetch annotation {} details: {}", annotationId, errorMsg);
+                // Return a fallback name instead of throwing exception to not break the entire response
+                annotationName = "Annotation " + annotationId;
+            } else {
+                JSONObject obj = new JSONObject(body);
+                annotationName = obj.optString("name", "Annotation " + annotationId);
+                logger.debug("Fetched annotation name for ID {}: {}", annotationId, annotationName);
+            }
+            
+            // Cache the result (even fallback names to avoid repeated failed API calls)
+            annotationNameCache.put(annotationId, new CachedAnnotationName(annotationName, currentTime));
+            return annotationName;
+        }
+    }
+
+    private void cleanupExpiredAnnotationCacheEntries() {
+        long currentTime = System.currentTimeMillis();
+        annotationNameCache.entrySet().removeIf(entry -> 
+            (currentTime - entry.getValue().timestamp()) >= TAG_CACHE_EXPIRY_MS);
+    }
+
     ClassificationData getTagIds(long scanId) throws IOException {
+        // Cleanup expired cache entries periodically
+        cleanupExpiredTagCacheEntries();
+        cleanupExpiredMetadataCacheEntries();
+        cleanupExpiredAnnotationCacheEntries();
+        
         JSONObject item = new JSONObject()
                 .put("parameter", "dxr#datasource_scan_id")
                 .put("value", scanId)
@@ -190,9 +361,14 @@ class DxrClient {
         try (Response response = executeWithRetry(request)) {
             String respBody = response.body() != null ? response.body().string() : "";
             if (!response.isSuccessful()) {
-                throw new IOException("Unexpected response: " + response.code() + " " + respBody);
+                String errorMsg = "Search request failed: HTTP " + response.code() + " - " + respBody;
+                logger.error("Failed to search for scan ID {}: {}", scanId, errorMsg);
+                throw new IOException(errorMsg);
             }
-            java.util.Map<String, String> extractedMetadata = new java.util.HashMap<>();
+            java.util.Map<Integer, String> extractedMetadataMap = new java.util.HashMap<>();
+            java.util.Set<Integer> tagIds = new java.util.HashSet<>();
+            String category = null;
+            java.util.Map<Integer, Integer> annotationCounts = new java.util.HashMap<>();
 
             JSONObject obj = new JSONObject(respBody);
             JSONObject hits = obj.optJSONObject("hits");
@@ -206,20 +382,108 @@ class DxrClient {
                             // Extract all metadata fields that start with "extracted_metadata#"
                             for (String key : src.keySet()) {
                                 if (key.startsWith("extracted_metadata#")) {
-                                    Object value = src.get(key);
-                                    if (value != null) {
-                                        extractedMetadata.put(key, String.valueOf(value));
+                                    try {
+                                        String idStr = key.substring("extracted_metadata#".length());
+                                        int metadataId = Integer.parseInt(idStr);
+                                        Object value = src.get(key);
+                                        if (value != null) {
+                                            extractedMetadataMap.put(metadataId, String.valueOf(value));
+                                        }
+                                    } catch (NumberFormatException e) {
+                                        logger.debug("Skipping invalid metadata key: {}", key);
                                     }
+                                } else if (key.startsWith("annotation_stats#count.")) {
+                                    // Extract annotation statistics
+                                    try {
+                                        String idStr = key.substring("annotation_stats#count.".length());
+                                        int annotationId = Integer.parseInt(idStr);
+                                        Object value = src.get(key);
+                                        if (value != null) {
+                                            int count = Integer.parseInt(String.valueOf(value));
+                                            annotationCounts.put(annotationId, count);
+                                        }
+                                    } catch (NumberFormatException e) {
+                                        logger.debug("Skipping invalid annotation count key: {}", key);
+                                    }
+                                }
+                            }
+
+                            // Extract tags from dxr#tags
+                            if (src.has("dxr#tags")) {
+                                Object tagsValue = src.get("dxr#tags");
+                                if (tagsValue instanceof JSONArray tagsArray) {
+                                    for (int j = 0; j < tagsArray.length(); j++) {
+                                        try {
+                                            int tagId = tagsArray.getInt(j);
+                                            tagIds.add(tagId);
+                                        } catch (Exception e) {
+                                            logger.debug("Skipping invalid tag ID: {}", tagsArray.opt(j));
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Extract ai#category (take the first non-null value found)
+                            if (category == null && src.has("ai#category")) {
+                                Object categoryValue = src.get("ai#category");
+                                if (categoryValue != null) {
+                                    category = String.valueOf(categoryValue);
                                 }
                             }
                         }
                     }
                 }
             }
-            logger.info("Successfully fetched search results for scan ID {}: {} metadata fields: {}",
-                scanId, extractedMetadata.size(),
-                extractedMetadata.isEmpty() ? "none" : extractedMetadata.keySet().toString());
-            return new ClassificationData(extractedMetadata);
+            
+            // Convert metadata map to list of MetadataItem records with names
+            java.util.List<MetadataItem> extractedMetadata = extractedMetadataMap.entrySet().stream()
+                .map(entry -> {
+                    try {
+                        String extractorName = getMetadataExtractorName(entry.getKey());
+                        return new MetadataItem(entry.getKey(), extractorName, entry.getValue());
+                    } catch (IOException e) {
+                        logger.warn("Failed to fetch name for metadata extractor {}: {}. Using fallback name.", entry.getKey(), e.getMessage());
+                        return new MetadataItem(entry.getKey(), "Metadata " + entry.getKey(), entry.getValue());
+                    }
+                })
+                .sorted((a, b) -> Integer.compare(a.id(), b.id()))
+                .toList();
+            
+            // Convert annotation counts map to list of AnnotationStat records with names
+            java.util.List<AnnotationStat> annotations = annotationCounts.entrySet().stream()
+                .map(entry -> {
+                    try {
+                        String annotationName = getAnnotationName(entry.getKey());
+                        return new AnnotationStat(entry.getKey(), annotationName, entry.getValue());
+                    } catch (IOException e) {
+                        logger.warn("Failed to fetch name for annotation {}: {}. Using fallback name.", entry.getKey(), e.getMessage());
+                        return new AnnotationStat(entry.getKey(), "Annotation " + entry.getKey(), entry.getValue());
+                    }
+                })
+                .sorted((a, b) -> Integer.compare(a.id(), b.id()))
+                .toList();
+            
+            // Convert tag IDs to list of TagItem records with names
+            java.util.List<TagItem> tags = tagIds.stream()
+                .map(tagId -> {
+                    try {
+                        String tagName = getTagName(tagId);
+                        return new TagItem(tagId, tagName);
+                    } catch (IOException e) {
+                        logger.warn("Failed to fetch name for tag {}: {}. Using fallback name.", tagId, e.getMessage());
+                        return new TagItem(tagId, "Tag " + tagId);
+                    }
+                })
+                .sorted((a, b) -> Integer.compare(a.id(), b.id()))
+                .toList();
+            
+            if (extractedMetadata.isEmpty() && tags.isEmpty() && category == null && annotations.isEmpty()) {
+                logger.warn("No classification data found for scan ID {}", scanId);
+            } else {
+                logger.info("Successfully fetched search results for scan ID {}: {} metadata fields, {} tags, {} annotations, category: {}",
+                    scanId, extractedMetadata.size(), tags.size(), annotations.size(), category);
+            }
+            return new ClassificationData(extractedMetadata, tags, category, annotations);
         }
     }
 }
