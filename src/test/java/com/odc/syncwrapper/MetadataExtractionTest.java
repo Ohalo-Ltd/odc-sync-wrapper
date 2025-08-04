@@ -163,4 +163,109 @@ class MetadataExtractionTest {
         
         server.shutdown();
     }
+
+    @Test
+    void shouldExtractAnnotationStatsWithNames() throws Exception {
+        MockWebServer server = new MockWebServer();
+        
+        // Mock response with annotation statistics
+        String responseBody = """
+            {
+                "hits": {
+                    "hits": [
+                        {
+                            "_source": {
+                                "dxr#tags": [1],
+                                "annotation_stats#count.10": "5",
+                                "annotation_stats#count.20": "3"
+                            }
+                        }
+                    ]
+                }
+            }
+            """;
+
+        server.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setBody(responseBody));
+        // Mock annotation name responses for annotation IDs 10 and 20 (need to match HashMap iteration order)
+        server.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setBody("{\"id\": 20, \"name\": \"Credit Card Pattern\"}"));
+        server.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setBody("{\"id\": 10, \"name\": \"SSN Pattern\"}"));
+        // Mock tag name response for tag ID 1
+        server.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setBody("{\"id\": 1, \"name\": \"Sensitive Data\"}"));
+        server.start();
+
+        String baseUrl = server.url("/").toString().replaceAll("/$", "");
+        DxrClient client = new DxrClient(baseUrl, "test-key");
+        
+        DxrClient.ClassificationData data = client.getTagIds(1);
+        
+        // Verify annotation extraction with names
+        List<DxrClient.AnnotationStat> annotations = data.annotations();
+        assertEquals(2, annotations.size());
+        
+        // Check that annotation stats are sorted by ID and have correct names and counts
+        assertEquals(10, annotations.get(0).id());
+        assertEquals("SSN Pattern", annotations.get(0).name());
+        assertEquals(5, annotations.get(0).count());
+        assertEquals(20, annotations.get(1).id());
+        assertEquals("Credit Card Pattern", annotations.get(1).name());
+        assertEquals(3, annotations.get(1).count());
+        
+        // Verify tags extraction with names
+        List<DxrClient.TagItem> tags = data.tags();
+        assertEquals(1, tags.size());
+        assertEquals(1, tags.get(0).id());
+        assertEquals("Sensitive Data", tags.get(0).name());
+        
+        server.shutdown();
+    }
+
+    @Test
+    void shouldHandleAnnotationNameFetchFailure() throws Exception {
+        MockWebServer server = new MockWebServer();
+        
+        String responseBody = """
+            {
+                "hits": {
+                    "hits": [
+                        {
+                            "_source": {
+                                "annotation_stats#count.99": "2"
+                            }
+                        }
+                    ]
+                }
+            }
+            """;
+
+        server.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setBody(responseBody));
+        // Mock annotation name response failure (404)
+        server.enqueue(new MockResponse()
+                .setResponseCode(404)
+                .setBody("{\"error\": \"Annotation not found\"}"));
+        server.start();
+
+        String baseUrl = server.url("/").toString().replaceAll("/$", "");
+        DxrClient client = new DxrClient(baseUrl, "test-key");
+        
+        DxrClient.ClassificationData data = client.getTagIds(1);
+        
+        // Verify annotation extraction with fallback name when API call fails
+        List<DxrClient.AnnotationStat> annotations = data.annotations();
+        assertEquals(1, annotations.size());
+        assertEquals(99, annotations.get(0).id());
+        assertEquals("Annotation 99", annotations.get(0).name()); // Should fall back to "Annotation {id}"
+        assertEquals(2, annotations.get(0).count());
+        
+        server.shutdown();
+    }
 }

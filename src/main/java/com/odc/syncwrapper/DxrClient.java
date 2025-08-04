@@ -25,12 +25,13 @@ class DxrClient {
     private static final long TAG_CACHE_EXPIRY_MS = 5 * 60 * 1000L; // 5 minutes
     
     record JobStatus(String state, long datasourceScanId, String errorMessage) {}
-    record AnnotationStat(int id, int count) {}
+    record AnnotationStat(int id, String name, int count) {}
     record MetadataItem(int id, String name, String value) {}
     record TagItem(int id, String name) {}
     record ClassificationData(java.util.List<MetadataItem> extractedMetadata, java.util.List<TagItem> tags, String category, java.util.List<AnnotationStat> annotations) {}
     record CachedTagName(String name, long timestamp) {}
     record CachedMetadataName(String name, long timestamp) {}
+    record CachedAnnotationName(String name, long timestamp) {}
 
     private final RetryPolicy<Response> retryPolicy = RetryPolicy.<Response>builder()
             .handle(IOException.class)
@@ -95,6 +96,7 @@ class DxrClient {
     private final OkHttpClient client = getUnsafeOkHttpClient();
     private final ConcurrentHashMap<Integer, CachedTagName> tagNameCache = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Integer, CachedMetadataName> metadataNameCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Integer, CachedAnnotationName> annotationNameCache = new ConcurrentHashMap<>();
 
     DxrClient(String baseUrl, String apiKey) {
         this.baseUrl = baseUrl;
@@ -280,10 +282,54 @@ class DxrClient {
             (currentTime - entry.getValue().timestamp()) >= TAG_CACHE_EXPIRY_MS);
     }
 
+    String getAnnotationName(int annotationId) throws IOException {
+        // Check cache first
+        CachedAnnotationName cached = annotationNameCache.get(annotationId);
+        long currentTime = System.currentTimeMillis();
+        
+        if (cached != null && (currentTime - cached.timestamp()) < TAG_CACHE_EXPIRY_MS) {
+            logger.debug("Using cached annotation name for ID {}: {}", annotationId, cached.name());
+            return cached.name();
+        }
+        
+        // Cache miss or expired, fetch from API
+        Request request = new Request.Builder()
+                .url(baseUrl + "/data-classes/" + annotationId)
+                .header("Authorization", "Bearer " + apiKey)
+                .get()
+                .build();
+        try (Response response = executeWithRetry(request)) {
+            String body = response.body() != null ? response.body().string() : "";
+            String annotationName;
+            
+            if (!response.isSuccessful()) {
+                String errorMsg = "Annotation fetch failed: HTTP " + response.code() + " - " + body;
+                logger.error("Failed to fetch annotation {} details: {}", annotationId, errorMsg);
+                // Return a fallback name instead of throwing exception to not break the entire response
+                annotationName = "Annotation " + annotationId;
+            } else {
+                JSONObject obj = new JSONObject(body);
+                annotationName = obj.optString("name", "Annotation " + annotationId);
+                logger.debug("Fetched annotation name for ID {}: {}", annotationId, annotationName);
+            }
+            
+            // Cache the result (even fallback names to avoid repeated failed API calls)
+            annotationNameCache.put(annotationId, new CachedAnnotationName(annotationName, currentTime));
+            return annotationName;
+        }
+    }
+
+    private void cleanupExpiredAnnotationCacheEntries() {
+        long currentTime = System.currentTimeMillis();
+        annotationNameCache.entrySet().removeIf(entry -> 
+            (currentTime - entry.getValue().timestamp()) >= TAG_CACHE_EXPIRY_MS);
+    }
+
     ClassificationData getTagIds(long scanId) throws IOException {
         // Cleanup expired cache entries periodically
         cleanupExpiredTagCacheEntries();
         cleanupExpiredMetadataCacheEntries();
+        cleanupExpiredAnnotationCacheEntries();
         
         JSONObject item = new JSONObject()
                 .put("parameter", "dxr#datasource_scan_id")
@@ -403,9 +449,17 @@ class DxrClient {
                 .sorted((a, b) -> Integer.compare(a.id(), b.id()))
                 .toList();
             
-            // Convert annotation counts map to list of AnnotationStat records
+            // Convert annotation counts map to list of AnnotationStat records with names
             java.util.List<AnnotationStat> annotations = annotationCounts.entrySet().stream()
-                .map(entry -> new AnnotationStat(entry.getKey(), entry.getValue()))
+                .map(entry -> {
+                    try {
+                        String annotationName = getAnnotationName(entry.getKey());
+                        return new AnnotationStat(entry.getKey(), annotationName, entry.getValue());
+                    } catch (IOException e) {
+                        logger.warn("Failed to fetch name for annotation {}: {}. Using fallback name.", entry.getKey(), e.getMessage());
+                        return new AnnotationStat(entry.getKey(), "Annotation " + entry.getKey(), entry.getValue());
+                    }
+                })
                 .sorted((a, b) -> Integer.compare(a.id(), b.id()))
                 .toList();
             

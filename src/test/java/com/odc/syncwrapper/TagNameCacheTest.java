@@ -164,4 +164,74 @@ class TagNameCacheTest {
         
         server.shutdown();
     }
+
+    @Test
+    void shouldCacheAnnotationNamesAndReuseForMultipleCalls() throws Exception {
+        MockWebServer server = new MockWebServer();
+        
+        // Mock responses for different annotation IDs
+        server.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setBody("{\"id\": 1, \"name\": \"First Annotation\"}"));
+        server.enqueue(new MockResponse()
+                .setResponseCode(200)
+                .setBody("{\"id\": 2, \"name\": \"Second Annotation\"}"));
+        server.start();
+
+        String baseUrl = server.url("/").toString().replaceAll("/$", "");
+        DxrClient client = new DxrClient(baseUrl, "test-key");
+        
+        // First call to annotation 1 - should hit API and cache
+        String firstName = client.getAnnotationName(1);
+        assertEquals("First Annotation", firstName);
+        assertEquals(1, server.getRequestCount());
+        
+        // Second call to annotation 1 - should use cache
+        String secondName = client.getAnnotationName(1);
+        assertEquals("First Annotation", secondName);
+        assertEquals(1, server.getRequestCount()); // Still only 1 request
+        
+        // Call to different annotation 2 - should hit API and cache separately
+        String differentAnnotation = client.getAnnotationName(2);
+        assertEquals("Second Annotation", differentAnnotation);
+        assertEquals(2, server.getRequestCount()); // Now 2 requests
+        
+        // Call to annotation 2 again - should use cache
+        String secondDifferentAnnotation = client.getAnnotationName(2);
+        assertEquals("Second Annotation", secondDifferentAnnotation);
+        assertEquals(2, server.getRequestCount()); // Still 2 requests
+        
+        // Original annotation should still be cached
+        String thirdName = client.getAnnotationName(1);
+        assertEquals("First Annotation", thirdName);
+        assertEquals(2, server.getRequestCount()); // Still 2 requests
+        
+        server.shutdown();
+    }
+
+    @Test
+    void shouldCacheFailedAnnotationLookups() throws Exception {
+        MockWebServer server = new MockWebServer();
+        
+        // Mock failed annotation response
+        server.enqueue(new MockResponse()
+                .setResponseCode(404)
+                .setBody("{\"error\": \"Annotation not found\"}"));
+        server.start();
+
+        String baseUrl = server.url("/").toString().replaceAll("/$", "");
+        DxrClient client = new DxrClient(baseUrl, "test-key");
+        
+        // First call - should hit API and cache the fallback name
+        String firstName = client.getAnnotationName(99);
+        assertEquals("Annotation 99", firstName);
+        assertEquals(1, server.getRequestCount());
+        
+        // Second call immediately - should use cache (no additional API call)
+        String secondName = client.getAnnotationName(99);
+        assertEquals("Annotation 99", secondName);
+        assertEquals(1, server.getRequestCount()); // Still only 1 request
+        
+        server.shutdown();
+    }
 }
