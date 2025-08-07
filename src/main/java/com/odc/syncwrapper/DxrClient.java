@@ -25,7 +25,7 @@ class DxrClient {
     private static final long TAG_CACHE_EXPIRY_MS = 5 * 60 * 1000L; // 5 minutes
     
     record JobStatus(String state, long datasourceScanId, String errorMessage) {}
-    record AnnotationStat(int id, String name, int count) {}
+    record AnnotationStat(int id, String name, int count, java.util.List<String> phraseMatches) {}
     record MetadataItem(int id, String name, String value) {}
     record TagItem(int id, String name) {}
     record ClassificationData(java.util.List<MetadataItem> extractedMetadata, java.util.List<TagItem> tags, String category, java.util.List<AnnotationStat> annotations) {}
@@ -369,6 +369,7 @@ class DxrClient {
             java.util.Set<Integer> tagIds = new java.util.HashSet<>();
             String category = null;
             java.util.Map<Integer, Integer> annotationCounts = new java.util.HashMap<>();
+            java.util.Map<Integer, java.util.List<String>> annotationPhraseMatches = new java.util.HashMap<>();
 
             JSONObject obj = new JSONObject(respBody);
             JSONObject hits = obj.optJSONObject("hits");
@@ -404,6 +405,26 @@ class DxrClient {
                                         }
                                     } catch (NumberFormatException e) {
                                         logger.debug("Skipping invalid annotation count key: {}", key);
+                                    }
+                                } else if (key.startsWith("annotation.")) {
+                                    // Extract annotation phrase matches
+                                    try {
+                                        String idStr = key.substring("annotation.".length());
+                                        int annotationId = Integer.parseInt(idStr);
+                                        Object value = src.get(key);
+                                        if (value instanceof JSONArray) {
+                                            JSONArray phraseArray = (JSONArray) value;
+                                            java.util.List<String> phrases = new java.util.ArrayList<>();
+                                            for (int j = 0; j < phraseArray.length(); j++) {
+                                                Object phrase = phraseArray.get(j);
+                                                if (phrase != null) {
+                                                    phrases.add(String.valueOf(phrase));
+                                                }
+                                            }
+                                            annotationPhraseMatches.put(annotationId, phrases);
+                                        }
+                                    } catch (NumberFormatException e) {
+                                        logger.debug("Skipping invalid annotation phrase match key: {}", key);
                                     }
                                 }
                             }
@@ -449,15 +470,17 @@ class DxrClient {
                 .sorted((a, b) -> Integer.compare(a.id(), b.id()))
                 .toList();
             
-            // Convert annotation counts map to list of AnnotationStat records with names
+            // Convert annotation counts map to list of AnnotationStat records with names and phrase matches
             java.util.List<AnnotationStat> annotations = annotationCounts.entrySet().stream()
                 .map(entry -> {
                     try {
                         String annotationName = getAnnotationName(entry.getKey());
-                        return new AnnotationStat(entry.getKey(), annotationName, entry.getValue());
+                        java.util.List<String> phraseMatches = annotationPhraseMatches.getOrDefault(entry.getKey(), java.util.List.of());
+                        return new AnnotationStat(entry.getKey(), annotationName, entry.getValue(), phraseMatches);
                     } catch (IOException e) {
                         logger.warn("Failed to fetch name for annotation {}: {}. Using fallback name.", entry.getKey(), e.getMessage());
-                        return new AnnotationStat(entry.getKey(), "Annotation " + entry.getKey(), entry.getValue());
+                        java.util.List<String> phraseMatches = annotationPhraseMatches.getOrDefault(entry.getKey(), java.util.List.of());
+                        return new AnnotationStat(entry.getKey(), "Annotation " + entry.getKey(), entry.getValue(), phraseMatches);
                     }
                 })
                 .sorted((a, b) -> Integer.compare(a.id(), b.id()))
