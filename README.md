@@ -6,9 +6,11 @@
 
 1. **Synchronous API**: Upload a file via `POST /classify-file` and receive classification results immediately
 2. **Intelligent Batching**: Automatically batches multiple file uploads to optimize Data X-Ray API efficiency
-3. **Client-side Retries**: All internal API calls to Data X-Ray use retries with exponential backoff
-4. **Multi-datasource Load Balancing**: Distributes requests across multiple Data X-Ray on-demand classifiers
-5. **Configurable Batching**: Control batch size and timeout via environment variables
+3. **Name Resolution with Caching**: Automatically resolves tag IDs, metadata extractor IDs, and annotation IDs to human-readable names with 5-minute caching
+4. **Client-side Retries**: All internal API calls to Data X-Ray use retries with exponential backoff
+5. **Multi-datasource Load Balancing**: Distributes requests across multiple Data X-Ray on-demand classifiers
+6. **Configurable Batching**: Control batch size and timeout via environment variables
+7. **Comprehensive Classification Results**: Returns tags, metadata extractors, annotations, and categories with both IDs and names
 
 ## Configuration
 
@@ -122,11 +124,41 @@ Response:
 {
   "filename": "your-document.txt",
   "status": "FINISHED",
-  "extractedMetadata": {
-    "extracted_metadata#1": "SSN",
-    "extracted_metadata#2": "Credit Card",
-    "extracted_metadata#custom": "Custom Field"
-  }
+  "extractedMetadata": [
+    {
+      "id": 1,
+      "name": "SSN Detector",
+      "value": "SSN"
+    },
+    {
+      "id": 2,
+      "name": "Credit Card Detector", 
+      "value": "Credit Card"
+    }
+  ],
+  "tags": [
+    {
+      "id": 10,
+      "name": "Sensitive Data"
+    },
+    {
+      "id": 11,
+      "name": "Personal Information"
+    }
+  ],
+  "category": "Sensitive Document",
+  "annotations": [
+    {
+      "id": 25,
+      "name": "SSN Pattern",
+      "count": 3
+    },
+    {
+      "id": 26,
+      "name": "Credit Card Pattern",
+      "count": 1
+    }
+  ]
 }
 ```
 
@@ -203,6 +235,47 @@ docker run -d -p 8844:8844 \
 
 Now you should be able to call the API endpoint `https://<your_dxr_address>/classify-file` with the API key from your DXR user.
 
+## Docker Images and Versioning
+
+The project uses automated Docker image building with version tagging:
+
+### Available Images
+
+Docker images are automatically built and published to GitHub Container Registry:
+
+- **Latest**: `ghcr.io/ohalo-ltd/odc-sync-wrapper:latest` (from main branch)
+- **Versioned**: `ghcr.io/ohalo-ltd/odc-sync-wrapper:1.1.1` (from git tags)
+- **Branch**: `ghcr.io/ohalo-ltd/odc-sync-wrapper:branch-name` (from feature branches)
+
+### Creating New Releases
+
+To create a new versioned release:
+
+```bash
+# Create and push a version tag
+git tag v1.2.0
+git push origin v1.2.0
+```
+
+This automatically triggers a GitHub workflow that:
+- Builds multi-platform Docker images (linux/amd64, linux/arm64)
+- Creates a versioned tag (e.g., `1.2.0` from `v1.2.0`)
+- Publishes to GitHub Container Registry
+- Does **not** update the `latest` tag (only main branch updates `latest`)
+
+### Using Specific Versions
+
+```bash
+# Use latest version
+docker pull ghcr.io/ohalo-ltd/odc-sync-wrapper:latest
+
+# Use specific version
+docker pull ghcr.io/ohalo-ltd/odc-sync-wrapper:1.1.1
+
+# Use development branch
+docker pull ghcr.io/ohalo-ltd/odc-sync-wrapper:feature-branch
+```
+
 ## Testing
 
 ### Unit Tests
@@ -234,18 +307,76 @@ This test:
 - Requires only `DXR_API_KEY` environment variable
 - Tests the complete workflow from file upload to classification results
 
-## Data X-Ray API Endpoints used.
+### Load Testing
 
-The application calls the Data X-Ray API at three endpoints:
+A comprehensive load testing suite is included for performance testing:
+
+```bash
+# Basic load test with default settings
+python load-test-suite.py
+
+# Load test with custom parameters
+python load-test-suite.py \
+  --server-url http://localhost:8844 \
+  --api-key "your-api-key" \
+  --samples-dir samples \
+  --duration 180
+```
+
+The load test suite features:
+- **Mixed File Types**: Automatically discovers and uses both `.txt` and `.pdf` sample files
+- **API Key Authentication**: Supports Bearer token authentication for testing live instances
+- **Incremental Load Testing**: Tests with rates from 2-20 files/second
+- **Comprehensive Metrics**: Measures throughput, latency (avg, p95, p99), and error rates
+- **Visual Reports**: Generates performance charts and CSV reports
+- **Concurrent Testing**: Simulates realistic concurrent file upload scenarios
+
+**Requirements:**
+- Python 3.7+ with `aiohttp`, `aiofiles`, `matplotlib`, `pandas`
+- Sample files in the `samples/` directory (both `.txt` and `.pdf` supported)
+- For live testing: valid API key and accessible server endpoint
+
+## Data X-Ray API Endpoints Used
+
+The application calls the Data X-Ray API at the following endpoints:
+
+### Core Classification Endpoints
 
 1. **Submit Job**
    - `POST {DXR_BASE_URL}/on-demand-classifiers/{datasource_id}/jobs`
-   - Sends the file as multipart form data under `files` and includes an `Authorization: Bearer {DXR_API_KEY}` header.
-   - Returns a `202` response containing JSON with an `id` value for the job.
+   - Sends the file as multipart form data under `files` and includes an `Authorization: Bearer {DXR_API_KEY}` header
+   - Returns a `202` response containing JSON with an `id` value for the job
 
 2. **Check Job Status**
    - `GET {DXR_BASE_URL}/on-demand-classifiers/{datasource_id}/jobs/{job_id}`
-   - Uses the same authorization header.
-   - Responds with JSON containing a `state` field. The job is finished when this value is `FINISHED`.
-3. **Search**
-   - Used to pull back the label of the file that was submitted.
+   - Uses the same authorization header
+   - Responds with JSON containing a `state` field. The job is finished when this value is `FINISHED`
+
+3. **Search Results**
+   - `POST {DXR_BASE_URL}/indexed-files/search`
+   - Used to retrieve classification results including tags, metadata, annotations, and categories
+   - Returns comprehensive classification data with IDs
+
+### Name Resolution Endpoints (with 5-minute caching)
+
+4. **Tag Name Lookup**
+   - `GET {DXR_BASE_URL}/tags/{tag_id}`
+   - Resolves tag IDs to human-readable names
+   - Cached for 5 minutes to optimize performance
+
+5. **Metadata Extractor Name Lookup**
+   - `GET {DXR_BASE_URL}/metadata-extractors/{metadata_extractor_id}`
+   - Resolves metadata extractor IDs to descriptive names
+   - Cached for 5 minutes to optimize performance
+
+6. **Annotation Name Lookup**
+   - `GET {DXR_BASE_URL}/data-classes/{annotation_id}`
+   - Resolves annotation class IDs to annotator names
+   - Cached for 5 minutes to optimize performance
+
+### Performance Optimizations
+
+- **Intelligent Caching**: All name lookups are cached for 5 minutes to reduce API calls
+- **Fallback Names**: If name resolution fails, fallback names like "Tag 123" are used
+- **Concurrent Requests**: Name resolution requests are made concurrently for optimal performance
+- **Cache Cleanup**: Expired cache entries are automatically cleaned up to prevent memory leaks
