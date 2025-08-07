@@ -5,3 +5,4 @@ target/
 .vscode
 
 load_test_results*
+saved_results/*

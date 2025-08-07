@@ -2,7 +2,7 @@
 """
 Performance Load Test Suite for ODC Sync Wrapper API
 Runs multiple load tests with incrementing rates and generates summary report
-Usage: python load-test-suite.py [--server-url URL] [--samples-dir DIR]
+Usage: python load-test-suite.py [--server-url URL] [--samples-dir DIR] [--api-key KEY] [--duration SECONDS]
 """
 
 import argparse
@@ -36,11 +36,12 @@ class TestResult:
     error_rate: float
 
 class LoadTester:
-    def __init__(self, server_url: str, files_per_second: int, duration: int, samples_dir: str):
+    def __init__(self, server_url: str, files_per_second: int, duration: int, samples_dir: str, api_key: Optional[str] = None):
         self.server_url = server_url
         self.files_per_second = files_per_second
         self.duration = duration
         self.samples_dir = Path(samples_dir)
+        self.api_key = api_key
         self.sample_files = []
         self.results = []
         self.start_time = None
@@ -51,11 +52,15 @@ class LoadTester:
 
     async def load_sample_files(self):
         """Load all sample files into memory"""
-        sample_files = list(self.samples_dir.glob("sample*.txt"))
-        if not sample_files:
-            raise FileNotFoundError(f"No sample files found in {self.samples_dir}")
+        # Look for both .txt and .pdf files
+        txt_files = list(self.samples_dir.glob("sample*.txt"))
+        pdf_files = list(self.samples_dir.glob("sample*.pdf"))
+        sample_files = txt_files + pdf_files
 
-        self.logger.info(f"Loading {len(sample_files)} sample files")
+        if not sample_files:
+            raise FileNotFoundError(f"No sample files (.txt or .pdf) found in {self.samples_dir}")
+
+        self.logger.info(f"Loading {len(sample_files)} sample files ({len(txt_files)} .txt, {len(pdf_files)} .pdf)")
 
         for file_path in sample_files:
             async with aiofiles.open(file_path, 'rb') as f:
@@ -69,10 +74,18 @@ class LoadTester:
         start_time = time.time()
 
         try:
-            data = aiohttp.FormData()
-            data.add_field('file', file_content, filename=file_name, content_type='text/plain')
+            # Determine content type based on file extension
+            content_type = 'application/pdf' if file_name.lower().endswith('.pdf') else 'text/plain'
 
-            async with session.post(f"{self.server_url}/classify-file", data=data) as response:
+            data = aiohttp.FormData()
+            data.add_field('file', file_content, filename=file_name, content_type=content_type)
+
+            # Prepare headers with API key if provided
+            headers = {}
+            if self.api_key:
+                headers['Authorization'] = f'Bearer {self.api_key}'
+
+            async with session.post(f"{self.server_url}/classify-file", data=data, headers=headers) as response:
                 end_time = time.time()
                 latency_ms = (end_time - start_time) * 1000
 
@@ -80,7 +93,8 @@ class LoadTester:
                     'status_code': response.status,
                     'latency_ms': latency_ms,
                     'success': response.status == 200,
-                    'timestamp': start_time,
+                    'start_time': start_time,
+                    'end_time': end_time,
                     'file_name': file_name
                 }
 
@@ -96,7 +110,8 @@ class LoadTester:
                 'status_code': 0,
                 'latency_ms': latency_ms,
                 'success': False,
-                'timestamp': start_time,
+                'start_time': start_time,
+                'end_time': end_time,
                 'file_name': file_name,
                 'error': str(e)
             }
@@ -185,9 +200,12 @@ class LoadTester:
         p95_latency = sorted_latencies[int(0.95 * len(sorted_latencies))]
         p99_latency = sorted_latencies[int(0.99 * len(sorted_latencies))]
 
-        # Calculate throughput
+        # Calculate throughput using actual test duration
         if self.results:
-            test_duration = max(r['timestamp'] for r in self.results) - min(r['timestamp'] for r in self.results)
+            # Use the time from first request start to last request completion
+            test_start = min(r['start_time'] for r in self.results)
+            test_end = max(r['end_time'] for r in self.results)
+            test_duration = test_end - test_start
             throughput = total_requests / test_duration if test_duration > 0 else 0
         else:
             throughput = 0
@@ -209,10 +227,11 @@ class LoadTester:
         )
 
 class LoadTestSuite:
-    def __init__(self, server_url: str, samples_dir: str, duration: int = 180):
+    def __init__(self, server_url: str, samples_dir: str, duration: int = 180, api_key: Optional[str] = None):
         self.server_url = server_url
         self.samples_dir = samples_dir
         self.duration = duration
+        self.api_key = api_key
         self.results = []
 
         # Setup logging
@@ -221,7 +240,7 @@ class LoadTestSuite:
 
     async def run_test_suite(self) -> List[TestResult]:
         """Run a series of load tests with incrementing rates"""
-        test_rates = list(range(2, 21, 2))  # 10, 20, 30, ..., 100 files per second
+        test_rates = [1, 2, 4, 8, 16, 32] # list(range(2, 21, 2))  # 10, 20, 30, ..., 100 files per second
 
         self.logger.info(f"Starting load test suite with {len(test_rates)} test configurations")
         self.logger.info(f"Test rates: {test_rates}")
@@ -232,7 +251,7 @@ class LoadTestSuite:
             self.logger.info(f"Running test {i+1}/{len(test_rates)}: {rate} files/second")
             self.logger.info(f"{'='*60}")
 
-            tester = LoadTester(self.server_url, rate, self.duration, self.samples_dir)
+            tester = LoadTester(self.server_url, rate, self.duration, self.samples_dir, self.api_key)
 
             try:
                 result = await tester.run_load_test()
@@ -385,6 +404,8 @@ async def main():
                         help='Directory containing sample files (default: samples)')
     parser.add_argument('--duration', type=int, default=180,
                         help='Duration per test in seconds (default: 180)')
+    parser.add_argument('--api-key', type=str, default=None,
+                        help='API key for authentication (Bearer token)')
 
     args = parser.parse_args()
 
@@ -395,14 +416,15 @@ async def main():
         sys.exit(1)
 
     # Create and run load test suite
-    suite = LoadTestSuite(args.server_url, args.samples_dir, args.duration)
+    suite = LoadTestSuite(args.server_url, args.samples_dir, args.duration, args.api_key)
 
     try:
         print("Starting Load Test Suite...")
         print(f"Server URL: {args.server_url}")
         print(f"Samples Directory: {args.samples_dir}")
         print(f"Duration per test: {args.duration} seconds")
-        print(f"Test rates: 2, 4, 6, 8, 10, 12, 14, 16, 18, 20 files/second")
+        print(f"API Key: {'***provided***' if args.api_key else 'None'}")
+        print(f"Test rates: {', '.join(map(str, [1, 2, 4, 8, 16, 32]))} files/second")
 
         results = await suite.run_test_suite()
 

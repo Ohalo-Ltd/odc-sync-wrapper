@@ -216,7 +216,7 @@ public class FileBatchingService {
                             .map(item -> new MetadataItem(item.id(), item.name(), item.value()))
                             .toList();
                         java.util.List<AnnotationStat> annotations = classificationData.annotations().stream()
-                            .map(stat -> new AnnotationStat(stat.id(), stat.name(), stat.count()))
+                            .map(stat -> new AnnotationStat(stat.id(), stat.name(), stat.count(), stat.phraseMatches()))
                             .toList();
                         java.util.List<TagItem> tags = classificationData.tags().stream()
                             .map(tag -> new TagItem(tag.id(), tag.name()))
@@ -306,7 +306,7 @@ public class FileBatchingService {
 
     public static record FileData(String originalFilename, String enhancedFilename, byte[] content, String contentType) {}
 
-    public static record AnnotationStat(int id, String name, int count) {}
+    public static record AnnotationStat(int id, String name, int count, java.util.List<String> phraseMatches) {}
     public static record MetadataItem(int id, String name, String value) {}
     public static record TagItem(int id, String name) {}
     public static record FileClassificationResult(String filename, String status, java.util.List<MetadataItem> extractedMetadata, java.util.List<TagItem> tags, String category, java.util.List<AnnotationStat> annotations) {}

@@ -214,9 +214,11 @@ class MetadataExtractionTest {
         assertEquals(10, annotations.get(0).id());
         assertEquals("SSN Pattern", annotations.get(0).name());
         assertEquals(5, annotations.get(0).count());
+        assertTrue(annotations.get(0).phraseMatches().isEmpty()); // No phrase matches in this test
         assertEquals(20, annotations.get(1).id());
         assertEquals("Credit Card Pattern", annotations.get(1).name());
         assertEquals(3, annotations.get(1).count());
+        assertTrue(annotations.get(1).phraseMatches().isEmpty()); // No phrase matches in this test
         
         // Verify tags extraction with names
         List<DxrClient.TagItem> tags = data.tags();
@@ -265,7 +267,60 @@ class MetadataExtractionTest {
         assertEquals(99, annotations.get(0).id());
         assertEquals("Annotation 99", annotations.get(0).name()); // Should fall back to "Annotation {id}"
         assertEquals(2, annotations.get(0).count());
+        assertTrue(annotations.get(0).phraseMatches().isEmpty()); // No phrase matches in this test
         
         server.shutdown();
+    }
+
+    @Test
+    void shouldExtractAnnotationPhraseMatches() throws Exception {
+        try (MockWebServer server = new MockWebServer()) {
+            // Mock response with annotation phrase matches
+            String responseBody = """
+                {
+                    "hits": {
+                        "hits": [
+                            {
+                                "_source": {
+                                    "annotation_stats#count.18": "2",
+                                    "annotation.18": [
+                                        "Lorem",
+                                        "tempor incididunt ut labore et"
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                }
+                """;
+
+            server.enqueue(new MockResponse()
+                    .setResponseCode(200)
+                    .setBody(responseBody));
+            // Mock annotation name response for annotation ID 18
+            server.enqueue(new MockResponse()
+                    .setResponseCode(200)
+                    .setBody("{\"id\": 18, \"name\": \"Lorem Pattern\"}"));
+            server.start();
+
+            String baseUrl = server.url("/").toString().replaceAll("/$", "");
+            DxrClient client = new DxrClient(baseUrl, "test-key");
+            
+            DxrClient.ClassificationData data = client.getTagIds(1);
+            
+            // Verify annotation extraction with phrase matches
+            List<DxrClient.AnnotationStat> annotations = data.annotations();
+            assertEquals(1, annotations.size());
+            
+            // Check that annotation has correct name, count, and phrase matches
+            assertEquals(18, annotations.get(0).id());
+            assertEquals("Lorem Pattern", annotations.get(0).name());
+            assertEquals(2, annotations.get(0).count());
+            
+            List<String> phraseMatches = annotations.get(0).phraseMatches();
+            assertEquals(2, phraseMatches.size());
+            assertEquals("Lorem", phraseMatches.get(0));
+            assertEquals("tempor incididunt ut labore et", phraseMatches.get(1));
+        }
     }
 }
