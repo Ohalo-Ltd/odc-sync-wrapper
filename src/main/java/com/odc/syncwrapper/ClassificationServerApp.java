@@ -27,14 +27,36 @@ public class ClassificationServerApp {
             "DXR_BASE_URL",
             "DXR_FIRST_ODC_DATASOURCE_ID",
             "DXR_ODC_DATASOURCE_COUNT",
-            "DXR_MAX_BATCH_SIZE",
-            "DXR_BATCH_INTERVAL_SEC"
+            "DXR_MAX_BATCH_SIZE"
         };
         
         for (String envVar : requiredEnvVars) {
             String value = System.getenv(envVar);
             if (value == null) {
                 System.err.println("Required environment variable " + envVar + " is not set");
+                System.exit(1);
+            }
+        }
+        
+        // Validate that at least one batch interval variable is set
+        String batchIntervalMs = System.getenv("DXR_BATCH_INTERVAL_MS");
+        String batchIntervalSec = System.getenv("DXR_BATCH_INTERVAL_SEC");
+        if (batchIntervalMs == null && batchIntervalSec == null) {
+            System.err.println("Either DXR_BATCH_INTERVAL_MS or DXR_BATCH_INTERVAL_SEC must be set");
+            System.exit(1);
+        }
+        
+        // Validate job status polling interval if provided
+        String jobStatusPollInterval = System.getenv("DXR_JOB_STATUS_POLL_INTERVAL_MS");
+        if (jobStatusPollInterval != null) {
+            try {
+                int pollInterval = Integer.parseInt(jobStatusPollInterval);
+                if (pollInterval <= 0) {
+                    System.err.println("DXR_JOB_STATUS_POLL_INTERVAL_MS must be a positive integer (milliseconds)");
+                    System.exit(1);
+                }
+            } catch (NumberFormatException e) {
+                System.err.println("DXR_JOB_STATUS_POLL_INTERVAL_MS must be a valid integer (milliseconds)");
                 System.exit(1);
             }
         }

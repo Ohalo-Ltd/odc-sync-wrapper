@@ -21,7 +21,8 @@ The server is configured via environment variables:
 - `DXR_FIRST_ODC_DATASOURCE_ID`: ID of the first on-demand classifier datasource
 - `DXR_ODC_DATASOURCE_COUNT`: Number of datasources to distribute load across
 - `DXR_MAX_BATCH_SIZE`: Maximum files per batch (e.g., 5)
-- `DXR_BATCH_INTERVAL_SEC`: Maximum time to wait for additional files (e.g., 30)
+- `DXR_BATCH_INTERVAL_MS`: Maximum time to wait for additional files in milliseconds (e.g., 30000)
+- `DXR_JOB_STATUS_POLL_INTERVAL_MS`: Job status polling interval in milliseconds (default: 1000, optional)
 
 ### API Key Authentication
 
@@ -52,7 +53,8 @@ export DXR_API_KEY="your-personal-access-token"  # Optional if using Authorizati
 export DXR_FIRST_ODC_DATASOURCE_ID="200"
 export DXR_ODC_DATASOURCE_COUNT="10"
 export DXR_MAX_BATCH_SIZE="5"
-export DXR_BATCH_INTERVAL_SEC="30"
+export DXR_BATCH_INTERVAL_MS="30000"
+export DXR_JOB_STATUS_POLL_INTERVAL_MS="1000"  # Optional
 
 java -jar target/odc-sync-wrapper-0.1.0-SNAPSHOT.jar
 ```
@@ -66,7 +68,8 @@ export DXR_BASE_URL="https://your-dxr-instance.com/api"
 export DXR_FIRST_ODC_DATASOURCE_ID="200"
 export DXR_ODC_DATASOURCE_COUNT="10"
 export DXR_MAX_BATCH_SIZE="5"
-export DXR_BATCH_INTERVAL_SEC="30"
+export DXR_BATCH_INTERVAL_MS="30000"
+export DXR_JOB_STATUS_POLL_INTERVAL_MS="1000"  # Optional
 
 java -jar target/odc-sync-wrapper-0.1.0-SNAPSHOT.jar
 ```
@@ -82,7 +85,8 @@ docker run -p 8844:8844 \
   -e DXR_FIRST_ODC_DATASOURCE_ID="200" \
   -e DXR_ODC_DATASOURCE_COUNT="10" \
   -e DXR_MAX_BATCH_SIZE="5" \
-  -e DXR_BATCH_INTERVAL_SEC="30" \
+  -e DXR_BATCH_INTERVAL_MS="30000" \
+  -e DXR_JOB_STATUS_POLL_INTERVAL_MS="1000" \
   odc-sync-wrapper
 ```
 
@@ -94,7 +98,8 @@ docker run -p 8844:8844 \
   -e DXR_FIRST_ODC_DATASOURCE_ID="200" \
   -e DXR_ODC_DATASOURCE_COUNT="10" \
   -e DXR_MAX_BATCH_SIZE="5" \
-  -e DXR_BATCH_INTERVAL_SEC="30" \
+  -e DXR_BATCH_INTERVAL_MS="30000" \
+  -e DXR_JOB_STATUS_POLL_INTERVAL_MS="1000" \
   odc-sync-wrapper
 ```
 
@@ -229,7 +234,8 @@ docker run -d -p 8844:8844 \
   -e DXR_FIRST_ODC_DATASOURCE_ID="100" \
   -e DXR_ODC_DATASOURCE_COUNT="2" \
   -e DXR_MAX_BATCH_SIZE="5" \
-  -e DXR_BATCH_INTERVAL_SEC="1" \
+  -e DXR_BATCH_INTERVAL_MS="1000" \
+  -e DXR_JOB_STATUS_POLL_INTERVAL_MS="500" \
   ghcr.io/ohalo-ltd/odc-sync-wrapper:latest
 ```
 
@@ -309,32 +315,14 @@ This test:
 
 ### Load Testing
 
-A comprehensive load testing suite is included for performance testing:
+The project includes Python scripts for comprehensive load testing and performance analysis.
 
-```bash
-# Basic load test with default settings
-python load-test-suite.py
-
-# Load test with custom parameters
-python load-test-suite.py \
-  --server-url http://localhost:8844 \
-  --api-key "your-api-key" \
-  --samples-dir samples \
-  --duration 180
-```
-
-The load test suite features:
-- **Mixed File Types**: Automatically discovers and uses both `.txt` and `.pdf` sample files
-- **API Key Authentication**: Supports Bearer token authentication for testing live instances
-- **Incremental Load Testing**: Tests with rates from 2-20 files/second
-- **Comprehensive Metrics**: Measures throughput, latency (avg, p95, p99), and error rates
-- **Visual Reports**: Generates performance charts and CSV reports
-- **Concurrent Testing**: Simulates realistic concurrent file upload scenarios
-
-**Requirements:**
-- Python 3.7+ with `aiohttp`, `aiofiles`, `matplotlib`, `pandas`
-- Sample files in the `samples/` directory (both `.txt` and `.pdf` supported)
-- For live testing: valid API key and accessible server endpoint
+**📖 See [README_PYTHON_SCRIPTS.md](README_PYTHON_SCRIPTS.md) for detailed documentation on:**
+- Installation and setup instructions
+- Available testing scripts (`load-test.py` and `load-test-suite.py`)
+- Usage examples and command-line options
+- Performance metrics and result interpretation
+- Troubleshooting guide
 
 ## Data X-Ray API Endpoints Used
 

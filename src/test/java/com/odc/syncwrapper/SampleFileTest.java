@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class SampleFileTest {
     @Test
     void sampleFileExists() {
-        Path file = Path.of("samples/sample.txt");
+        Path file = Path.of("samples/plain_txt/sample.txt");
         assertTrue(Files.exists(file), "Sample file should exist");
     }
 }

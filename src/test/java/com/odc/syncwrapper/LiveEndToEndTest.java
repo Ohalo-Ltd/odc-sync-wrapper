@@ -32,7 +32,7 @@ import static org.junit.jupiter.api.Assertions.*;
     "DXR_FIRST_ODC_DATASOURCE_ID=290",
     "DXR_ODC_DATASOURCE_COUNT=2",
     "DXR_MAX_BATCH_SIZE=2",
-    "DXR_BATCH_INTERVAL_SEC=1"
+    "DXR_BATCH_INTERVAL_MS=1000"
 })
 public class LiveEndToEndTest {
 
@@ -131,7 +131,7 @@ public class LiveEndToEndTest {
 
     private List<Path> createSampleFiles() throws IOException {
         List<Path> files = new java.util.ArrayList<>();
-        Path samplesDir = Path.of("samples");
+        Path samplesDir = Path.of("samples/plain_txt");
         
         // Use the first 6 sample files from the samples directory
         for (int i = 1; i <= 6; i++) {

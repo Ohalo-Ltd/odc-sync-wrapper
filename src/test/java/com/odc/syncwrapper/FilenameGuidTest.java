@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.*;
     "DXR_FIRST_ODC_DATASOURCE_ID=290",
     "DXR_ODC_DATASOURCE_COUNT=2",
     "DXR_MAX_BATCH_SIZE=2",
-    "DXR_BATCH_INTERVAL_SEC=1"
+    "DXR_BATCH_INTERVAL_MS=1000"
 })
 public class FilenameGuidTest {
 
