@@ -46,6 +46,21 @@ public class ClassificationServerApp {
             System.exit(1);
         }
         
+        // Validate job status polling interval if provided
+        String jobStatusPollInterval = System.getenv("DXR_JOB_STATUS_POLL_INTERVAL_MS");
+        if (jobStatusPollInterval != null) {
+            try {
+                int pollInterval = Integer.parseInt(jobStatusPollInterval);
+                if (pollInterval <= 0) {
+                    System.err.println("DXR_JOB_STATUS_POLL_INTERVAL_MS must be a positive integer (milliseconds)");
+                    System.exit(1);
+                }
+            } catch (NumberFormatException e) {
+                System.err.println("DXR_JOB_STATUS_POLL_INTERVAL_MS must be a valid integer (milliseconds)");
+                System.exit(1);
+            }
+        }
+        
         // Check DXR_API_KEY separately as it's optional (can be provided via Authorization header)
         String apiKey = System.getenv("DXR_API_KEY");
         if (apiKey != null && !apiKey.isEmpty()) {

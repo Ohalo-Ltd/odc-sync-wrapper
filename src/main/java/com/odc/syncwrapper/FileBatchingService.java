@@ -42,6 +42,9 @@ public class FileBatchingService {
     @Value("${DXR_BATCH_INTERVAL_SEC:#{null}}")
     private Integer batchIntervalSec;
 
+    @Value("${DXR_JOB_STATUS_POLL_INTERVAL_MS:1000}")
+    private int jobStatusPollIntervalMs;
+
     private int effectiveBatchIntervalMs;
 
     private final AtomicInteger datasourceIdCounter = new AtomicInteger();
@@ -72,6 +75,7 @@ public class FileBatchingService {
         }
         
         logger.info("Using batch interval of {} milliseconds", effectiveBatchIntervalMs);
+        logger.info("Using job status polling interval of {} milliseconds", jobStatusPollIntervalMs);
     }
 
     public CompletableFuture<FileClassificationResult> processFile(MultipartFile file) {
@@ -190,7 +194,7 @@ public class FileBatchingService {
                 do {
                     // Wait for job to complete
                     do {
-                        Thread.sleep(1000);
+                        Thread.sleep(jobStatusPollIntervalMs);
                         status = effectiveClient.getJobStatus(datasourceId, jobId);
                         logger.debug("Job {} status: {}", jobId, status.state());
                     } while (!"FINISHED".equals(status.state()) && !"FAILED".equals(status.state()));
