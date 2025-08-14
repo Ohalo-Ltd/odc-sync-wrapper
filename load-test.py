@@ -17,9 +17,6 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import List, Optional
 import logging
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-from datetime import datetime
 
 @dataclass
 class TestResult:
@@ -277,10 +274,12 @@ class LoadTester:
         p95_latency = sorted_latencies[int(0.95 * len(sorted_latencies))]
         p99_latency = sorted_latencies[int(0.99 * len(sorted_latencies))]
 
-        # Calculate throughput
+        # Calculate throughput - from first request start to last response completion
         if self.results:
-            test_duration = max(r['timestamp'] for r in self.results) - min(r['timestamp'] for r in self.results)
-            throughput = total_requests / test_duration if test_duration > 0 else 0
+            first_request_start = min(r['timestamp'] for r in self.results)
+            last_request_completion = max(r['timestamp'] + r['latency_ms']/1000 for r in self.results)
+            actual_test_duration = last_request_completion - first_request_start
+            throughput = total_requests / actual_test_duration if actual_test_duration > 0 else 0
         else:
             throughput = 0
 
@@ -358,108 +357,6 @@ class LoadTester:
                     print(f"  Error: {r['error'][:200]}...")
                 print()
 
-    def save_summary_chart(self, result: TestResult, output_prefix: Optional[str] = None):
-        """Generate and save a summary chart showing latency and throughput metrics"""
-        if not output_prefix:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_prefix = f"load_test_results_{timestamp}"
-
-        # Create figure with subplots
-        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 10))
-
-        if self.is_sequential:
-            title = f'Sequential Test Summary - {self.sequential_count} files'
-        else:
-            title = f'Rate-Limited Test Summary - {self.files_per_second} files/sec for {self.duration}s'
-
-        fig.suptitle(title, fontsize=16, fontweight='bold')
-
-        # 1. Latency Distribution (Histogram)
-        latencies = [r['latency_ms'] for r in self.results if r['success']]
-        if latencies:
-            ax1.hist(latencies, bins=50, alpha=0.7, color='skyblue', edgecolor='black')
-            ax1.axvline(result.avg_latency_ms, color='red', linestyle='--',
-                       label=f'Avg: {result.avg_latency_ms:.1f}ms')
-            ax1.axvline(result.p95_latency_ms, color='orange', linestyle='--',
-                       label=f'P95: {result.p95_latency_ms:.1f}ms')
-            ax1.set_xlabel('Latency (ms)')
-            ax1.set_ylabel('Frequency')
-            ax1.set_title('Latency Distribution')
-            ax1.legend()
-            ax1.grid(True, alpha=0.3)
-
-        # 2. Key Metrics Bar Chart
-        metrics = ['Avg Latency\n(ms)', 'P95 Latency\n(ms)', 'P99 Latency\n(ms)', 'Throughput\n(req/s)']
-        values = [result.avg_latency_ms, result.p95_latency_ms, result.p99_latency_ms, result.throughput_rps]
-        colors = ['lightblue', 'orange', 'lightcoral', 'lightgreen']
-
-        bars = ax2.bar(metrics, values, color=colors, alpha=0.8, edgecolor='black')
-        ax2.set_title('Key Performance Metrics')
-        ax2.grid(True, alpha=0.3, axis='y')
-
-        # Add value labels on bars
-        for bar, value in zip(bars, values):
-            height = bar.get_height()
-            ax2.text(bar.get_x() + bar.get_width()/2., height + height*0.01,
-                    f'{value:.1f}', ha='center', va='bottom', fontweight='bold')
-
-        # 3. Success vs Error Rate Pie Chart
-        success_count = result.successful_requests
-        error_count = result.failed_requests
-
-        if error_count > 0:
-            labels = ['Successful', 'Failed']
-            sizes = [success_count, error_count]
-            colors_pie = ['lightgreen', 'lightcoral']
-            explode = (0, 0.1)  # explode the error slice
-        else:
-            labels = ['Successful']
-            sizes = [success_count]
-            colors_pie = ['lightgreen']
-            explode = None
-
-        ax3.pie(sizes, explode=explode, labels=labels, colors=colors_pie, autopct='%1.1f%%',
-                shadow=True, startangle=90)
-        ax3.set_title(f'Request Success Rate\n(Total: {result.total_requests} requests)')
-
-        # 4. Latency Over Time (if we have timestamp data)
-        timestamps = [(r['timestamp'] - self.start_time) for r in self.results if r['success']]
-        successful_latencies = [r['latency_ms'] for r in self.results if r['success']]
-
-        if timestamps and successful_latencies:
-            # Create scatter plot with trend line
-            ax4.scatter(timestamps, successful_latencies, alpha=0.6, s=10, color='blue')
-
-            # Calculate and plot moving average
-            if len(timestamps) > 10:
-                window_size = max(1, len(timestamps) // 20)  # 5% of data points
-                moving_avg = []
-                moving_times = []
-                for i in range(window_size, len(timestamps)):
-                    avg_latency = statistics.mean(successful_latencies[i-window_size:i])
-                    moving_avg.append(avg_latency)
-                    moving_times.append(timestamps[i])
-
-                ax4.plot(moving_times, moving_avg, color='red', linewidth=2,
-                        label=f'Moving Avg (window={window_size})')
-                ax4.legend()
-
-            ax4.set_xlabel('Time (seconds from start)')
-            ax4.set_ylabel('Latency (ms)')
-            ax4.set_title('Latency Over Time')
-            ax4.grid(True, alpha=0.3)
-        else:
-            ax4.text(0.5, 0.5, 'No timing data available', ha='center', va='center',
-                    transform=ax4.transAxes, fontsize=12)
-            ax4.set_title('Latency Over Time')
-
-        # Adjust layout and save
-        plt.tight_layout()
-        chart_filename = f"{output_prefix}.png"
-        plt.savefig(chart_filename, dpi=300, bbox_inches='tight')
-        print(f"\nSummary chart saved to: {chart_filename}")
-
-        return chart_filename
 
 
 async def main():
@@ -520,16 +417,12 @@ async def main():
         result = await tester.run_load_test()
         tester.print_results(result)
 
-        # Generate and save summary chart
-        tester.save_summary_chart(result)
 
     except KeyboardInterrupt:
         print("\nTest interrupted by user")
         if tester.results:
             result = tester.calculate_results()
             tester.print_results(result)
-            # Generate chart even for interrupted tests
-            tester.save_summary_chart(result)
     except Exception as e:
         print(f"Error running load test: {e}")
         sys.exit(1)
