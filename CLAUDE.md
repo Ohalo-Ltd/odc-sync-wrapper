@@ -44,6 +44,7 @@ docker run -p 8844:8844 \
   -e DXR_ODC_DATASOURCE_COUNT="10" \
   -e DXR_MAX_BATCH_SIZE="5" \
   -e DXR_BATCH_INTERVAL_MS="30000" \
+  -e DXR_JOB_STATUS_POLL_INTERVAL_MS="1000" \
   odc-sync-wrapper
 ```
 
@@ -54,7 +55,7 @@ This repository contains a Java 21 Spring Boot REST API server built with Maven.
 * Use four spaces for indentation in Java source files.
 * Run `mvn test` before every commit to ensure tests pass. Don't use the `-q` option.
 * Add new unit tests for any new functionality.
-* The application expects environment variables: `DXR_BASE_URL`, `DXR_API_KEY`, `DXR_FIRST_ODC_DATASOURCE_ID`, `DXR_ODC_DATASOURCE_COUNT`, `DXR_MAX_BATCH_SIZE`, and `DXR_BATCH_INTERVAL_MS`.
+* The application expects environment variables: `DXR_BASE_URL`, `DXR_API_KEY`, `DXR_FIRST_ODC_DATASOURCE_ID`, `DXR_ODC_DATASOURCE_COUNT`, `DXR_MAX_BATCH_SIZE`, `DXR_BATCH_INTERVAL_MS`, and optionally `DXR_JOB_STATUS_POLL_INTERVAL_MS`.
 * Keep sample data in `samples/plain_txt/sample.txt` so tests continue to work.
 
 ## Architecture
@@ -101,6 +102,7 @@ Required:
 - `DXR_BATCH_INTERVAL_MS`: Batch timeout in milliseconds (e.g., 30000)
 
 Optional:
+- `DXR_JOB_STATUS_POLL_INTERVAL_MS`: Job status polling interval in milliseconds (default: 1000)
 - `RUN_LIVE_TESTS`: Set to "true" to enable live integration tests
 
 ### Sample Data

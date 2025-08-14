@@ -22,6 +22,7 @@ The server is configured via environment variables:
 - `DXR_ODC_DATASOURCE_COUNT`: Number of datasources to distribute load across
 - `DXR_MAX_BATCH_SIZE`: Maximum files per batch (e.g., 5)
 - `DXR_BATCH_INTERVAL_MS`: Maximum time to wait for additional files in milliseconds (e.g., 30000)
+- `DXR_JOB_STATUS_POLL_INTERVAL_MS`: Job status polling interval in milliseconds (default: 1000, optional)
 
 ### API Key Authentication
 
@@ -53,6 +54,7 @@ export DXR_FIRST_ODC_DATASOURCE_ID="200"
 export DXR_ODC_DATASOURCE_COUNT="10"
 export DXR_MAX_BATCH_SIZE="5"
 export DXR_BATCH_INTERVAL_MS="30000"
+export DXR_JOB_STATUS_POLL_INTERVAL_MS="1000"  # Optional
 
 java -jar target/odc-sync-wrapper-0.1.0-SNAPSHOT.jar
 ```
@@ -67,6 +69,7 @@ export DXR_FIRST_ODC_DATASOURCE_ID="200"
 export DXR_ODC_DATASOURCE_COUNT="10"
 export DXR_MAX_BATCH_SIZE="5"
 export DXR_BATCH_INTERVAL_MS="30000"
+export DXR_JOB_STATUS_POLL_INTERVAL_MS="1000"  # Optional
 
 java -jar target/odc-sync-wrapper-0.1.0-SNAPSHOT.jar
 ```
@@ -83,6 +86,7 @@ docker run -p 8844:8844 \
   -e DXR_ODC_DATASOURCE_COUNT="10" \
   -e DXR_MAX_BATCH_SIZE="5" \
   -e DXR_BATCH_INTERVAL_MS="30000" \
+  -e DXR_JOB_STATUS_POLL_INTERVAL_MS="1000" \
   odc-sync-wrapper
 ```
 
@@ -95,6 +99,7 @@ docker run -p 8844:8844 \
   -e DXR_ODC_DATASOURCE_COUNT="10" \
   -e DXR_MAX_BATCH_SIZE="5" \
   -e DXR_BATCH_INTERVAL_MS="30000" \
+  -e DXR_JOB_STATUS_POLL_INTERVAL_MS="1000" \
   odc-sync-wrapper
 ```
 
@@ -230,6 +235,7 @@ docker run -d -p 8844:8844 \
   -e DXR_ODC_DATASOURCE_COUNT="2" \
   -e DXR_MAX_BATCH_SIZE="5" \
   -e DXR_BATCH_INTERVAL_MS="1000" \
+  -e DXR_JOB_STATUS_POLL_INTERVAL_MS="500" \
   ghcr.io/ohalo-ltd/odc-sync-wrapper:latest
 ```
 
@@ -309,95 +315,14 @@ This test:
 
 ### Load Testing
 
-The project includes comprehensive load testing tools for performance analysis:
+The project includes Python scripts for comprehensive load testing and performance analysis.
 
-#### Individual Load Test (`load-test.py`)
-
-For targeted performance testing with visual analytics. Supports two modes:
-
-**Rate-Limited Mode** (concurrent requests at specified rate):
-```bash
-# Install Python dependencies
-pip install -r requirements.txt
-
-# Basic rate-limited test - 5 files/second for 60 seconds
-python load-test.py --rate-mode --files-per-second 5 --duration 60
-
-# High-throughput test with custom server
-python load-test.py --rate-mode \
-  --files-per-second 20 \
-  --duration 120 \
-  --server-url http://your-server:8844 \
-  --samples-dir samples/plain_txt
-```
-
-**Sequential Mode** (sends files one after another):
-```bash
-# Send 10 files sequentially, waiting for each to complete
-python load-test.py --sequential 10
-
-# Sequential test with custom server and samples directory
-python load-test.py --sequential 25 \
-  --server-url http://your-server:8844 \
-  --samples-dir samples/plain_txt
-```
-
-**Features:**
-- **Two Test Modes**:
-  - **Rate-Limited**: Sends files at a specified rate with concurrent processing (good for load testing)
-  - **Sequential**: Sends files one at a time, waiting for each to complete (good for debugging and baseline testing)
-- **Visual Analytics**: Automatically generates a 4-panel summary chart showing:
-  - Latency distribution histogram with average and P95 markers
-  - Key performance metrics bar chart (avg, P95, P99 latency + throughput)
-  - Success rate pie chart
-  - Latency over time scatter plot with moving average trend line
-- **Comprehensive Metrics**: Reports detailed latency statistics and throughput
-- **Real-time Progress**: Shows progress updates during test execution
-- **Enhanced Error Detection**: Properly detects API failures even when server returns HTTP 200
-- **Timestamped Results**: Charts saved as `load_test_results_YYYYMMDD_HHMMSS.png`
-
-#### Load Test Suite (`load-test-suite.py`)
-
-For comprehensive multi-rate performance analysis:
-
-```bash
-# Basic suite test with default settings
-python load-test-suite.py
-
-# Full suite with custom parameters
-python load-test-suite.py \
-  --server-url http://localhost:8844 \
-  --api-key "your-api-key" \
-  --samples-dir samples/plain_txt \
-  --duration 180
-```
-
-**Features:**
-- **Mixed File Types**: Automatically discovers and uses both `.txt` and `.pdf` sample files from `samples/plain_txt/` and `samples/pdf_ocr/`
-- **API Key Authentication**: Supports Bearer token authentication for testing live instances
-- **Incremental Load Testing**: Tests with rates from 2-20 files/second
-- **Comprehensive Metrics**: Measures throughput, latency (avg, p95, p99), and error rates
-- **CSV Reports**: Generates detailed performance data in CSV format
-- **Concurrent Testing**: Simulates realistic concurrent file upload scenarios
-
-#### Requirements
-
-- Python 3.7+ with dependencies: `pip install -r requirements.txt`
-- Sample files in `samples/plain_txt/` (text files) and `samples/pdf_ocr/` (PDF files)
-- For live testing: valid API key and accessible server endpoint
-
-#### Understanding Load Test Results
-
-**Chart Interpretation:**
-- **Latency Distribution**: Look for normal distribution; long tails indicate performance issues
-- **Key Metrics**: Compare P95/P99 latency to average - high variance suggests inconsistent performance
-- **Success Rate**: Should be 100% for healthy systems; failures indicate capacity limits
-- **Latency Over Time**: Rising trend indicates performance degradation under sustained load
-
-**Performance Targets:**
-- **Latency**: P95 < 5000ms for typical workloads
-- **Throughput**: Should meet or exceed target files/second
-- **Error Rate**: Should be 0% under normal operating conditions
+**📖 See [README_PYTHON_SCRIPTS.md](README_PYTHON_SCRIPTS.md) for detailed documentation on:**
+- Installation and setup instructions
+- Available testing scripts (`load-test.py` and `load-test-suite.py`)
+- Usage examples and command-line options
+- Performance metrics and result interpretation
+- Troubleshooting guide
 
 ## Data X-Ray API Endpoints Used
 
