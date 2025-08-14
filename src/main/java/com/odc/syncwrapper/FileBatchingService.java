@@ -36,8 +36,13 @@ public class FileBatchingService {
     @Value("${DXR_MAX_BATCH_SIZE}")
     private int maxBatchSize;
 
-    @Value("${DXR_BATCH_INTERVAL_SEC}")
-    private int batchIntervalSec;
+    @Value("${DXR_BATCH_INTERVAL_MS:#{null}}")
+    private Integer batchIntervalMs;
+
+    @Value("${DXR_BATCH_INTERVAL_SEC:#{null}}")
+    private Integer batchIntervalSec;
+
+    private int effectiveBatchIntervalMs;
 
     private final AtomicInteger datasourceIdCounter = new AtomicInteger();
     private final ExecutorService executorService = Executors.newCachedThreadPool();
@@ -50,6 +55,23 @@ public class FileBatchingService {
     @PostConstruct
     public void initialize() {
         this.datasourceIdCounter.set(firstDatasourceId);
+        
+        // Handle backward compatibility for DXR_BATCH_INTERVAL_SEC
+        if (batchIntervalMs != null && batchIntervalSec != null) {
+            logger.warn("Both DXR_BATCH_INTERVAL_MS and DXR_BATCH_INTERVAL_SEC are set. Using DXR_BATCH_INTERVAL_MS and ignoring DXR_BATCH_INTERVAL_SEC.");
+            logger.warn("DEPRECATED: DXR_BATCH_INTERVAL_SEC is deprecated. Please use DXR_BATCH_INTERVAL_MS instead.");
+            effectiveBatchIntervalMs = batchIntervalMs;
+        } else if (batchIntervalMs != null) {
+            effectiveBatchIntervalMs = batchIntervalMs;
+        } else if (batchIntervalSec != null) {
+            logger.warn("DEPRECATED: DXR_BATCH_INTERVAL_SEC is deprecated and will be removed in a future version. Please use DXR_BATCH_INTERVAL_MS instead.");
+            logger.warn("Converting DXR_BATCH_INTERVAL_SEC={} seconds to DXR_BATCH_INTERVAL_MS={} milliseconds", batchIntervalSec, batchIntervalSec * 1000);
+            effectiveBatchIntervalMs = batchIntervalSec * 1000;
+        } else {
+            throw new IllegalArgumentException("Either DXR_BATCH_INTERVAL_MS or DXR_BATCH_INTERVAL_SEC must be set");
+        }
+        
+        logger.info("Using batch interval of {} milliseconds", effectiveBatchIntervalMs);
     }
 
     public CompletableFuture<FileClassificationResult> processFile(MultipartFile file) {
@@ -64,7 +86,7 @@ public class FileBatchingService {
             currentBatch.add(request);
 
             if (currentBatch.size() == 1) {
-                batchTimer = scheduledExecutor.schedule(this::processBatch, batchIntervalSec, TimeUnit.SECONDS);
+                batchTimer = scheduledExecutor.schedule(this::processBatch, effectiveBatchIntervalMs, TimeUnit.MILLISECONDS);
             }
 
             if (currentBatch.size() >= maxBatchSize) {

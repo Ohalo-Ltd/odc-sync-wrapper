@@ -12,6 +12,7 @@ import time
 import statistics
 import sys
 import os
+import json
 from pathlib import Path
 from dataclasses import dataclass
 from typing import List, Optional
@@ -85,21 +86,34 @@ class LoadTester:
 
                 # Additional checks for common error patterns in successful HTTP responses
                 if is_success and response_text:
-                    error_indicators = [
-                        'API key is required',
-                        'Unauthorized',
-                        'Authentication failed',
-                        'Invalid API key',
-                        'Access denied',
-                        '"error"',
-                        '"message"'
-                    ]
-
-                    response_lower = response_text.lower()
-                    for indicator in error_indicators:
-                        if indicator.lower() in response_lower:
+                    # First try to parse JSON and check status field
+                    try:
+                        json_response = json.loads(response_text)
+                        if isinstance(json_response, dict) and json_response.get('status') == 'FAILED':
                             is_success = False
-                            break
+                    except (json.JSONDecodeError, ValueError):
+                        # If not valid JSON, fall back to text pattern matching
+                        pass
+                    
+                    # If still successful, check for text-based error indicators
+                    if is_success:
+                        error_indicators = [
+                            'API key is required',
+                            'Unauthorized',
+                            'Authentication failed',
+                            'Invalid API key',
+                            'Access denied',
+                            '"error"',
+                            '"message"',
+                            '"status":"FAILED"',
+                            '"status": "FAILED"'
+                        ]
+
+                        response_lower = response_text.lower()
+                        for indicator in error_indicators:
+                            if indicator.lower() in response_lower:
+                                is_success = False
+                                break
 
                 result = {
                     'status_code': response.status,
@@ -455,8 +469,8 @@ async def main():
     mode_group = parser.add_mutually_exclusive_group(required=True)
     mode_group.add_argument('--rate-mode', action='store_true',
                            help='Run in rate-limited mode (requires --files-per-second and --duration)')
-    mode_group.add_argument('--sequential', type=int, metavar='COUNT',
-                           help='Run in sequential mode, sending COUNT files one after another')
+    mode_group.add_argument('--sequential-mode', type=int, metavar='COUNT',
+                           help='Run in sequential mode, sending COUNT files one after another for testing single-file latency')
 
     # Rate-limited mode arguments
     parser.add_argument('--files-per-second', type=int,
@@ -483,8 +497,8 @@ async def main():
         if args.duration <= 0:
             print("Error: duration must be positive")
             sys.exit(1)
-    elif args.sequential:
-        if args.sequential <= 0:
+    elif args.sequential_mode:
+        if args.sequential_mode <= 0:
             print("Error: sequential count must be positive")
             sys.exit(1)
 
@@ -500,7 +514,7 @@ async def main():
                            files_per_second=args.files_per_second, duration=args.duration)
     else:  # sequential mode
         tester = LoadTester(args.server_url, args.samples_dir,
-                           sequential_count=args.sequential)
+                           sequential_count=args.sequential_mode)
 
     try:
         result = await tester.run_load_test()

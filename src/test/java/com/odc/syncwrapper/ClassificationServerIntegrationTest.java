@@ -48,7 +48,7 @@ public class ClassificationServerIntegrationTest {
         pb.environment().put("DXR_FIRST_ODC_DATASOURCE_ID", "100");
         pb.environment().put("DXR_ODC_DATASOURCE_COUNT", "2");
         pb.environment().put("DXR_MAX_BATCH_SIZE", "3");
-        pb.environment().put("DXR_BATCH_INTERVAL_SEC", "10");
+        pb.environment().put("DXR_BATCH_INTERVAL_MS", "10000");
         pb.redirectErrorStream(true);
         
         Process process = pb.start();

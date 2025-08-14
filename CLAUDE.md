@@ -43,7 +43,7 @@ docker run -p 8844:8844 \
   -e DXR_FIRST_ODC_DATASOURCE_ID="200" \
   -e DXR_ODC_DATASOURCE_COUNT="10" \
   -e DXR_MAX_BATCH_SIZE="5" \
-  -e DXR_BATCH_INTERVAL_SEC="30" \
+  -e DXR_BATCH_INTERVAL_MS="30000" \
   odc-sync-wrapper
 ```
 
@@ -54,7 +54,7 @@ This repository contains a Java 21 Spring Boot REST API server built with Maven.
 * Use four spaces for indentation in Java source files.
 * Run `mvn test` before every commit to ensure tests pass. Don't use the `-q` option.
 * Add new unit tests for any new functionality.
-* The application expects environment variables: `DXR_BASE_URL`, `DXR_API_KEY`, `DXR_FIRST_ODC_DATASOURCE_ID`, `DXR_ODC_DATASOURCE_COUNT`, `DXR_MAX_BATCH_SIZE`, and `DXR_BATCH_INTERVAL_SEC`.
+* The application expects environment variables: `DXR_BASE_URL`, `DXR_API_KEY`, `DXR_FIRST_ODC_DATASOURCE_ID`, `DXR_ODC_DATASOURCE_COUNT`, `DXR_MAX_BATCH_SIZE`, and `DXR_BATCH_INTERVAL_MS`.
 * Keep sample data in `samples/plain_txt/sample.txt` so tests continue to work.
 
 ## Architecture
@@ -71,7 +71,7 @@ This is the **ODC Sync Wrapper** - a REST API server for the Data X-Ray on-deman
 
 ### Key Design Patterns
 
-1. **File Batching**: Accumulates files for `DXR_BATCH_INTERVAL_SEC` or until `DXR_MAX_BATCH_SIZE` is reached
+1. **File Batching**: Accumulates files for `DXR_BATCH_INTERVAL_MS` milliseconds or until `DXR_MAX_BATCH_SIZE` is reached
 2. **Synchronous API**: Each `/classify-file` call returns a synchronous response despite internal batching
 3. **Datasource Round-Robin**: Distributes batches across configured datasources
 4. **Retry Logic**: 
@@ -98,7 +98,7 @@ Required:
 - `DXR_FIRST_ODC_DATASOURCE_ID`: First datasource ID to use (e.g., 200)
 - `DXR_ODC_DATASOURCE_COUNT`: Number of datasources to rotate through (e.g., 10)
 - `DXR_MAX_BATCH_SIZE`: Maximum files per batch (e.g., 5)
-- `DXR_BATCH_INTERVAL_SEC`: Batch timeout in seconds (e.g., 30)
+- `DXR_BATCH_INTERVAL_MS`: Batch timeout in milliseconds (e.g., 30000)
 
 Optional:
 - `RUN_LIVE_TESTS`: Set to "true" to enable live integration tests

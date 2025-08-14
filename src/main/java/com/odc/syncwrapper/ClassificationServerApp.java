@@ -27,8 +27,7 @@ public class ClassificationServerApp {
             "DXR_BASE_URL",
             "DXR_FIRST_ODC_DATASOURCE_ID",
             "DXR_ODC_DATASOURCE_COUNT",
-            "DXR_MAX_BATCH_SIZE",
-            "DXR_BATCH_INTERVAL_SEC"
+            "DXR_MAX_BATCH_SIZE"
         };
         
         for (String envVar : requiredEnvVars) {
@@ -37,6 +36,14 @@ public class ClassificationServerApp {
                 System.err.println("Required environment variable " + envVar + " is not set");
                 System.exit(1);
             }
+        }
+        
+        // Validate that at least one batch interval variable is set
+        String batchIntervalMs = System.getenv("DXR_BATCH_INTERVAL_MS");
+        String batchIntervalSec = System.getenv("DXR_BATCH_INTERVAL_SEC");
+        if (batchIntervalMs == null && batchIntervalSec == null) {
+            System.err.println("Either DXR_BATCH_INTERVAL_MS or DXR_BATCH_INTERVAL_SEC must be set");
+            System.exit(1);
         }
         
         // Check DXR_API_KEY separately as it's optional (can be provided via Authorization header)

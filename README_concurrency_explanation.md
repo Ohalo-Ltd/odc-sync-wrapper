@@ -39,7 +39,7 @@ public CompletableFuture<FileClassificationResult> processFile(MultipartFile fil
         
         // First file in batch - start the timer
         if (currentBatch.size() == 1) {
-            batchTimer = scheduledExecutor.schedule(this::processBatch, batchIntervalSec, TimeUnit.SECONDS);
+            batchTimer = scheduledExecutor.schedule(this::processBatch, batchIntervalMs, TimeUnit.MILLISECONDS);
         }
         
         // Batch is full - process immediately
@@ -57,7 +57,7 @@ public CompletableFuture<FileClassificationResult> processFile(MultipartFile fil
 
 ### Step 2: Batch Triggering
 A batch is processed when either:
-- **Time-based**: `DXR_BATCH_INTERVAL_SEC` seconds elapse since the first file
+- **Time-based**: `DXR_BATCH_INTERVAL_MS` milliseconds elapse since the first file
 - **Size-based**: `DXR_MAX_BATCH_SIZE` files are accumulated
 
 ### Step 3: Batch Processing
@@ -85,7 +85,7 @@ private void processBatch() {
 
 ### Scenario 1: Sequential File Uploads
 ```
-Time: 0s    - File A arrives → starts 30s timer
+Time: 0s    - File A arrives → starts 30000ms timer
 Time: 5s    - File B arrives → added to batch
 Time: 10s   - File C arrives → added to batch
 Time: 30s   - Timer expires → batch [A,B,C] processed
@@ -93,7 +93,7 @@ Time: 30s   - Timer expires → batch [A,B,C] processed
 
 ### Scenario 2: Rapid File Uploads (Batch Size Limit)
 ```
-Time: 0s    - File A arrives → starts 30s timer
+Time: 0s    - File A arrives → starts 30000ms timer
 Time: 1s    - File B arrives → added to batch
 Time: 2s    - File C arrives → added to batch
 Time: 3s    - File D arrives → added to batch
@@ -191,7 +191,7 @@ if ("FINISHED".equals(status.state())) {
 - **Larger values**: Better API efficiency, higher memory usage, longer wait times
 - **Smaller values**: Lower latency, more API calls, lower memory usage
 
-### Batch Interval (`DXR_BATCH_INTERVAL_SEC`)
+### Batch Interval (`DXR_BATCH_INTERVAL_MS`)
 - **Longer intervals**: Better batching efficiency, higher individual request latency
 - **Shorter intervals**: Lower latency, potentially less efficient batching
 
