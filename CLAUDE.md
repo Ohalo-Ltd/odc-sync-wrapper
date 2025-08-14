@@ -55,7 +55,7 @@ This repository contains a Java 21 Spring Boot REST API server built with Maven.
 * Run `mvn test` before every commit to ensure tests pass. Don't use the `-q` option.
 * Add new unit tests for any new functionality.
 * The application expects environment variables: `DXR_BASE_URL`, `DXR_API_KEY`, `DXR_FIRST_ODC_DATASOURCE_ID`, `DXR_ODC_DATASOURCE_COUNT`, `DXR_MAX_BATCH_SIZE`, and `DXR_BATCH_INTERVAL_SEC`.
-* Keep sample data in `samples/sample.txt` so tests continue to work.
+* Keep sample data in `samples/plain_txt/sample.txt` so tests continue to work.
 
 ## Architecture
 
@@ -105,7 +105,7 @@ Optional:
 
 ### Sample Data
 
-The `samples/` directory contains 100 sample text files (sample1.txt through sample100.txt) used for testing. Files are cycled through when the test requires more files than available samples.
+The `samples/plain_txt/` directory contains 100 sample text files (sample1.txt through sample100.txt) used for testing. Files are cycled through when the test requires more files than available samples. The `samples/pdf_ocr/` directory contains PDF files used for OCR testing.
 
 ## Technology Stack
 

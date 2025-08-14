@@ -131,7 +131,7 @@ public class LiveEndToEndTest {
 
     private List<Path> createSampleFiles() throws IOException {
         List<Path> files = new java.util.ArrayList<>();
-        Path samplesDir = Path.of("samples");
+        Path samplesDir = Path.of("samples/plain_txt");
         
         // Use the first 6 sample files from the samples directory
         for (int i = 1; i <= 6; i++) {
