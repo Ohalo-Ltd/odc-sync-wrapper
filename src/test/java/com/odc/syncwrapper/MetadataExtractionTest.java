@@ -3,29 +3,12 @@ package com.odc.syncwrapper;
 import org.junit.jupiter.api.Test;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.MockResponse;
-import java.lang.reflect.Field;
 import java.util.List;
 
+import static com.odc.syncwrapper.TestHelper.createNameCacheService;
 import static org.junit.jupiter.api.Assertions.*;
 
 class MetadataExtractionTest {
-
-    private NameCacheService createNameCacheService(String baseUrl, String apiKey) throws Exception {
-        NameCacheService service = new NameCacheService();
-        setField(service, "baseUrl", baseUrl);
-        setField(service, "apiKey", apiKey);
-        setField(service, "cacheExpiryMs", 300000L);
-        setField(service, "preloadTagIds", "");
-        setField(service, "preloadMetadataExtractorIds", "");
-        setField(service, "preloadAnnotationIds", "");
-        return service;
-    }
-
-    private void setField(Object target, String fieldName, Object value) throws Exception {
-        Field field = target.getClass().getDeclaredField(fieldName);
-        field.setAccessible(true);
-        field.set(target, value);
-    }
 
     @Test
     void shouldExtractAllMetadataFields() throws Exception {
