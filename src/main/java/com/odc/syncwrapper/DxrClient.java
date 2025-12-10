@@ -1,7 +1,6 @@
 package com.odc.syncwrapper;
 
 import okhttp3.*;
-import dev.failsafe.Failsafe;
 import dev.failsafe.RetryPolicy;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -10,14 +9,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.List;
-
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLSocketFactory;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
-
-
-import java.time.Duration;
 
 class DxrClient {
     private static final Logger logger = LoggerFactory.getLogger(DxrClient.class);
@@ -28,67 +19,10 @@ class DxrClient {
     record TagItem(int id, String name) {}
     record ClassificationData(java.util.List<MetadataItem> extractedMetadata, java.util.List<TagItem> tags, String category, java.util.List<AnnotationStat> annotations) {}
 
-    private final RetryPolicy<Response> retryPolicy = RetryPolicy.<Response>builder()
-            .handle(IOException.class)
-            .handleResultIf(r -> r.code() >= 500)
-            .withBackoff(Duration.ofMillis(100), Duration.ofSeconds(1))
-            .withMaxAttempts(3)
-            .onRetry(event -> {
-                Throwable lastException = event.getLastException();
-                Response lastResult = event.getLastResult();
-                if (lastException != null) {
-                    logger.warn("Retrying API call due to exception (attempt {}/{}): {}",
-                        event.getAttemptCount(), 3, lastException.getMessage());
-                } else if (lastResult != null) {
-                    logger.warn("Retrying API call due to HTTP error (attempt {}/{}): HTTP {}",
-                        event.getAttemptCount(), 3, lastResult.code());
-                }
-            })
-            .onFailure(event -> {
-                Throwable lastException = event.getException();
-                Response lastResult = event.getResult();
-                if (lastException != null) {
-                    logger.error("API call failed after {} attempts: {}",
-                        event.getAttemptCount(), lastException.getMessage());
-                } else if (lastResult != null) {
-                    logger.error("API call failed after {} attempts: HTTP {}",
-                        event.getAttemptCount(), lastResult.code());
-                }
-            })
-            .build();
-
-    public static OkHttpClient getUnsafeOkHttpClient() {
-        try {
-            final TrustManager[] trustAllCerts = new TrustManager[]{
-                new X509TrustManager() {
-                    @Override
-                    public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) {}
-                    @Override
-                    public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) {}
-                    @Override
-                    public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[]{}; }
-                }
-            };
-
-            final SSLContext sslContext = SSLContext.getInstance("SSL");
-            sslContext.init(null, trustAllCerts, new java.security.SecureRandom());
-            final SSLSocketFactory sslSocketFactory = sslContext.getSocketFactory();
-
-            OkHttpClient.Builder builder = new OkHttpClient.Builder();
-            builder.sslSocketFactory(sslSocketFactory, (X509TrustManager)trustAllCerts[0]);
-            builder.hostnameVerifier((hostname, session) -> true);
-            builder.readTimeout(Duration.ofMinutes(20));
-            builder.writeTimeout(Duration.ofMinutes(20));
-            builder.connectTimeout(Duration.ofMinutes(20));
-
-            return builder.build();
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
+    private final RetryPolicy<Response> retryPolicy = HttpClientUtils.createRetryPolicy();
     private final String baseUrl;
     private final String apiKey;
-    private final OkHttpClient client = getUnsafeOkHttpClient();
+    private final OkHttpClient client = HttpClientUtils.getUnsafeOkHttpClient();
     private final NameCacheService nameCacheService;
 
     DxrClient(String baseUrl, String apiKey, NameCacheService nameCacheService) {
@@ -98,14 +32,7 @@ class DxrClient {
     }
 
     private Response executeWithRetry(Request request) throws IOException {
-        try {
-            return Failsafe.with(retryPolicy).get(() -> client.newCall(request).execute());
-        } catch (Exception e) {
-            if (e instanceof IOException io) {
-                throw io;
-            }
-            throw new IOException(e);
-        }
+        return HttpClientUtils.executeWithRetry(client, retryPolicy, request);
     }
 
 
