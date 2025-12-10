@@ -1,5 +1,6 @@
 package com.odc.syncwrapper;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -20,6 +21,9 @@ public class FileBatchingService {
 
     private static final long FAILED_RETRY_BACKOFF_MS = 10_000L;
     private static final int FAILED_RETRY_ATTEMPTS = 3;
+
+    @Autowired
+    private NameCacheService nameCacheService;
 
     @Value("${DXR_BASE_URL}")
     private String baseUrl;
@@ -151,8 +155,8 @@ public class FileBatchingService {
                     return;
                 }
 
-                // Create DxrClient with the effective API key
-                DxrClient effectiveClient = new DxrClient(baseUrl, effectiveApiKey);
+                // Create DxrClient with the effective API key and shared cache service
+                DxrClient effectiveClient = new DxrClient(baseUrl, effectiveApiKey, nameCacheService);
 
                 List<FileData> fileDataList = new ArrayList<>();
                 for (FileRequest request : batch) {

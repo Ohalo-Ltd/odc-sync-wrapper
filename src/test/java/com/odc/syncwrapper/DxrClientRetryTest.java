@@ -4,11 +4,29 @@ import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class DxrClientRetryTest {
+
+    private NameCacheService createNameCacheService(String baseUrl, String apiKey) throws Exception {
+        NameCacheService service = new NameCacheService();
+        setField(service, "baseUrl", baseUrl);
+        setField(service, "apiKey", apiKey);
+        setField(service, "cacheExpiryMs", 300000L);
+        setField(service, "preloadTagIds", "");
+        setField(service, "preloadMetadataExtractorIds", "");
+        setField(service, "preloadAnnotationIds", "");
+        return service;
+    }
+
+    private void setField(Object target, String fieldName, Object value) throws Exception {
+        Field field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
+    }
 
     @Test
     void submitJobRetriesOnError() throws Exception {
@@ -18,7 +36,8 @@ public class DxrClientRetryTest {
             server.enqueue(new MockResponse().setResponseCode(202).setBody("{\"id\":\"job1\"}"));
             server.start();
             String baseUrl = server.url("/").toString().replaceAll("/$", "");
-            DxrClient client = new DxrClient(baseUrl, "key");
+            NameCacheService nameCacheService = createNameCacheService(baseUrl, "key");
+            DxrClient client = new DxrClient(baseUrl, "key", nameCacheService);
             FileBatchingService.FileData fileData = new FileBatchingService.FileData(
                 "sample.txt", "sample_guid.txt", "test content".getBytes(), "text/plain");
             String id = client.submitJob(1, List.of(fileData));
@@ -36,7 +55,8 @@ public class DxrClientRetryTest {
                     .setBody("{\"state\":\"FINISHED\",\"datasourceScanId\":5}"));
             server.start();
             String baseUrl = server.url("/").toString().replaceAll("/$", "");
-            DxrClient client = new DxrClient(baseUrl, "key");
+            NameCacheService nameCacheService = createNameCacheService(baseUrl, "key");
+            DxrClient client = new DxrClient(baseUrl, "key", nameCacheService);
             DxrClient.JobStatus status = client.getJobStatus(1, "job5");
             assertEquals("FINISHED", status.state());
             assertEquals(5, status.datasourceScanId());
@@ -53,7 +73,8 @@ public class DxrClientRetryTest {
                     .setBody("{\"hits\":{\"hits\":[{\"_source\":{\"dxr#tags\":[\"A\"]}}]}}"));
             server.start();
             String baseUrl = server.url("/").toString().replaceAll("/$", "");
-            DxrClient client = new DxrClient(baseUrl, "key");
+            NameCacheService nameCacheService = createNameCacheService(baseUrl, "key");
+            DxrClient client = new DxrClient(baseUrl, "key", nameCacheService);
             client.getTagIds(1);
             assertEquals(3, server.getRequestCount());
         }

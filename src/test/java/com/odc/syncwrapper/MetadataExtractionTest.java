@@ -3,11 +3,29 @@ package com.odc.syncwrapper;
 import org.junit.jupiter.api.Test;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.MockResponse;
+import java.lang.reflect.Field;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class MetadataExtractionTest {
+
+    private NameCacheService createNameCacheService(String baseUrl, String apiKey) throws Exception {
+        NameCacheService service = new NameCacheService();
+        setField(service, "baseUrl", baseUrl);
+        setField(service, "apiKey", apiKey);
+        setField(service, "cacheExpiryMs", 300000L);
+        setField(service, "preloadTagIds", "");
+        setField(service, "preloadMetadataExtractorIds", "");
+        setField(service, "preloadAnnotationIds", "");
+        return service;
+    }
+
+    private void setField(Object target, String fieldName, Object value) throws Exception {
+        Field field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
+    }
 
     @Test
     void shouldExtractAllMetadataFields() throws Exception {
@@ -51,14 +69,15 @@ class MetadataExtractionTest {
         server.start();
 
         String baseUrl = server.url("/").toString().replaceAll("/$", "");
-        DxrClient client = new DxrClient(baseUrl, "test-key");
-        
+        NameCacheService nameCacheService = createNameCacheService(baseUrl, "test-key");
+        DxrClient client = new DxrClient(baseUrl, "test-key", nameCacheService);
+
         DxrClient.ClassificationData data = client.getTagIds(1);
-        
+
         // Verify metadata extraction
         List<DxrClient.MetadataItem> metadata = data.extractedMetadata();
         assertEquals(2, metadata.size());
-        
+
         // Check that metadata items are sorted by ID and have correct names and values
         assertEquals(1, metadata.get(0).id());
         assertEquals("SSN Detector", metadata.get(0).name());
@@ -66,7 +85,7 @@ class MetadataExtractionTest {
         assertEquals(2, metadata.get(1).id());
         assertEquals("Credit Card Detector", metadata.get(1).name());
         assertEquals("Credit Card", metadata.get(1).value());
-        
+
         // Verify tags extraction with names
         List<DxrClient.TagItem> tags = data.tags();
         assertEquals(2, tags.size());
@@ -74,14 +93,14 @@ class MetadataExtractionTest {
         assertEquals("Sensitive Data", tags.get(0).name());
         assertEquals(2, tags.get(1).id());
         assertEquals("Personal Info", tags.get(1).name());
-        
+
         server.shutdown();
     }
-    
+
     @Test
     void shouldHandleEmptyMetadata() throws Exception {
         MockWebServer server = new MockWebServer();
-        
+
         String responseBody = """
             {
                 "hits": {
@@ -100,14 +119,15 @@ class MetadataExtractionTest {
         server.enqueue(new MockResponse()
                 .setResponseCode(200)
                 .setBody(responseBody));
-        // Mock tag name response for tag ID 3  
+        // Mock tag name response for tag ID 3
         server.enqueue(new MockResponse()
                 .setResponseCode(200)
                 .setBody("{\"id\": 3, \"name\": \"Public Data\"}"));
         server.start();
 
         String baseUrl = server.url("/").toString().replaceAll("/$", "");
-        DxrClient client = new DxrClient(baseUrl, "test-key");
+        NameCacheService nameCacheService = createNameCacheService(baseUrl, "test-key");
+        DxrClient client = new DxrClient(baseUrl, "test-key", nameCacheService);
         
         DxrClient.ClassificationData data = client.getTagIds(1);
         
@@ -151,16 +171,17 @@ class MetadataExtractionTest {
         server.start();
 
         String baseUrl = server.url("/").toString().replaceAll("/$", "");
-        DxrClient client = new DxrClient(baseUrl, "test-key");
-        
+        NameCacheService nameCacheService = createNameCacheService(baseUrl, "test-key");
+        DxrClient client = new DxrClient(baseUrl, "test-key", nameCacheService);
+
         DxrClient.ClassificationData data = client.getTagIds(1);
-        
+
         // Verify tags extraction with fallback name when API call fails
         List<DxrClient.TagItem> tags = data.tags();
         assertEquals(1, tags.size());
         assertEquals(99, tags.get(0).id());
         assertEquals("Tag 99", tags.get(0).name()); // Should fall back to "Tag {id}"
-        
+
         server.shutdown();
     }
 
@@ -202,14 +223,15 @@ class MetadataExtractionTest {
         server.start();
 
         String baseUrl = server.url("/").toString().replaceAll("/$", "");
-        DxrClient client = new DxrClient(baseUrl, "test-key");
-        
+        NameCacheService nameCacheService = createNameCacheService(baseUrl, "test-key");
+        DxrClient client = new DxrClient(baseUrl, "test-key", nameCacheService);
+
         DxrClient.ClassificationData data = client.getTagIds(1);
-        
+
         // Verify annotation extraction with names
         List<DxrClient.AnnotationStat> annotations = data.annotations();
         assertEquals(2, annotations.size());
-        
+
         // Check that annotation stats are sorted by ID and have correct names and counts
         assertEquals(10, annotations.get(0).id());
         assertEquals("SSN Pattern", annotations.get(0).name());
@@ -219,13 +241,13 @@ class MetadataExtractionTest {
         assertEquals("Credit Card Pattern", annotations.get(1).name());
         assertEquals(3, annotations.get(1).count());
         assertTrue(annotations.get(1).phraseMatches().isEmpty()); // No phrase matches in this test
-        
+
         // Verify tags extraction with names
         List<DxrClient.TagItem> tags = data.tags();
         assertEquals(1, tags.size());
         assertEquals(1, tags.get(0).id());
         assertEquals("Sensitive Data", tags.get(0).name());
-        
+
         server.shutdown();
     }
 
@@ -257,10 +279,11 @@ class MetadataExtractionTest {
         server.start();
 
         String baseUrl = server.url("/").toString().replaceAll("/$", "");
-        DxrClient client = new DxrClient(baseUrl, "test-key");
-        
+        NameCacheService nameCacheService = createNameCacheService(baseUrl, "test-key");
+        DxrClient client = new DxrClient(baseUrl, "test-key", nameCacheService);
+
         DxrClient.ClassificationData data = client.getTagIds(1);
-        
+
         // Verify annotation extraction with fallback name when API call fails
         List<DxrClient.AnnotationStat> annotations = data.annotations();
         assertEquals(1, annotations.size());
@@ -268,7 +291,7 @@ class MetadataExtractionTest {
         assertEquals("Annotation 99", annotations.get(0).name()); // Should fall back to "Annotation {id}"
         assertEquals(2, annotations.get(0).count());
         assertTrue(annotations.get(0).phraseMatches().isEmpty()); // No phrase matches in this test
-        
+
         server.shutdown();
     }
 
@@ -304,10 +327,11 @@ class MetadataExtractionTest {
             server.start();
 
             String baseUrl = server.url("/").toString().replaceAll("/$", "");
-            DxrClient client = new DxrClient(baseUrl, "test-key");
-            
+            NameCacheService nameCacheService = createNameCacheService(baseUrl, "test-key");
+            DxrClient client = new DxrClient(baseUrl, "test-key", nameCacheService);
+
             DxrClient.ClassificationData data = client.getTagIds(1);
-            
+
             // Verify annotation extraction with phrase matches
             List<DxrClient.AnnotationStat> annotations = data.annotations();
             assertEquals(1, annotations.size());
