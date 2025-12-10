@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static com.odc.syncwrapper.TestHelper.createNameCacheService;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class DxrClientRetryTest {
@@ -18,7 +19,8 @@ public class DxrClientRetryTest {
             server.enqueue(new MockResponse().setResponseCode(202).setBody("{\"id\":\"job1\"}"));
             server.start();
             String baseUrl = server.url("/").toString().replaceAll("/$", "");
-            DxrClient client = new DxrClient(baseUrl, "key");
+            NameCacheService nameCacheService = createNameCacheService(baseUrl, "key");
+            DxrClient client = new DxrClient(baseUrl, "key", nameCacheService);
             FileBatchingService.FileData fileData = new FileBatchingService.FileData(
                 "sample.txt", "sample_guid.txt", "test content".getBytes(), "text/plain");
             String id = client.submitJob(1, List.of(fileData));
@@ -36,7 +38,8 @@ public class DxrClientRetryTest {
                     .setBody("{\"state\":\"FINISHED\",\"datasourceScanId\":5}"));
             server.start();
             String baseUrl = server.url("/").toString().replaceAll("/$", "");
-            DxrClient client = new DxrClient(baseUrl, "key");
+            NameCacheService nameCacheService = createNameCacheService(baseUrl, "key");
+            DxrClient client = new DxrClient(baseUrl, "key", nameCacheService);
             DxrClient.JobStatus status = client.getJobStatus(1, "job5");
             assertEquals("FINISHED", status.state());
             assertEquals(5, status.datasourceScanId());
@@ -53,7 +56,8 @@ public class DxrClientRetryTest {
                     .setBody("{\"hits\":{\"hits\":[{\"_source\":{\"dxr#tags\":[\"A\"]}}]}}"));
             server.start();
             String baseUrl = server.url("/").toString().replaceAll("/$", "");
-            DxrClient client = new DxrClient(baseUrl, "key");
+            NameCacheService nameCacheService = createNameCacheService(baseUrl, "key");
+            DxrClient client = new DxrClient(baseUrl, "key", nameCacheService);
             client.getTagIds(1);
             assertEquals(3, server.getRequestCount());
         }

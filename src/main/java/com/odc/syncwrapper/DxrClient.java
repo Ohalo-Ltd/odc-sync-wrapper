@@ -1,7 +1,6 @@
 package com.odc.syncwrapper;
 
 import okhttp3.*;
-import dev.failsafe.Failsafe;
 import dev.failsafe.RetryPolicy;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -10,108 +9,30 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
-
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLSocketFactory;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
-
-
-import java.time.Duration;
 
 class DxrClient {
     private static final Logger logger = LoggerFactory.getLogger(DxrClient.class);
-    private static final long TAG_CACHE_EXPIRY_MS = 5 * 60 * 1000L; // 5 minutes
-    
+
     record JobStatus(String state, long datasourceScanId, String errorMessage) {}
     record AnnotationStat(int id, String name, int count, java.util.List<String> phraseMatches) {}
     record MetadataItem(int id, String name, String value) {}
     record TagItem(int id, String name) {}
     record ClassificationData(java.util.List<MetadataItem> extractedMetadata, java.util.List<TagItem> tags, String category, java.util.List<AnnotationStat> annotations) {}
-    record CachedTagName(String name, long timestamp) {}
-    record CachedMetadataName(String name, long timestamp) {}
-    record CachedAnnotationName(String name, long timestamp) {}
 
-    private final RetryPolicy<Response> retryPolicy = RetryPolicy.<Response>builder()
-            .handle(IOException.class)
-            .handleResultIf(r -> r.code() >= 500)
-            .withBackoff(Duration.ofMillis(100), Duration.ofSeconds(1))
-            .withMaxAttempts(3)
-            .onRetry(event -> {
-                Throwable lastException = event.getLastException();
-                Response lastResult = event.getLastResult();
-                if (lastException != null) {
-                    logger.warn("Retrying API call due to exception (attempt {}/{}): {}",
-                        event.getAttemptCount(), 3, lastException.getMessage());
-                } else if (lastResult != null) {
-                    logger.warn("Retrying API call due to HTTP error (attempt {}/{}): HTTP {}",
-                        event.getAttemptCount(), 3, lastResult.code());
-                }
-            })
-            .onFailure(event -> {
-                Throwable lastException = event.getException();
-                Response lastResult = event.getResult();
-                if (lastException != null) {
-                    logger.error("API call failed after {} attempts: {}",
-                        event.getAttemptCount(), lastException.getMessage());
-                } else if (lastResult != null) {
-                    logger.error("API call failed after {} attempts: HTTP {}",
-                        event.getAttemptCount(), lastResult.code());
-                }
-            })
-            .build();
-
-    public static OkHttpClient getUnsafeOkHttpClient() {
-        try {
-            final TrustManager[] trustAllCerts = new TrustManager[]{
-                new X509TrustManager() {
-                    @Override
-                    public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) {}
-                    @Override
-                    public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) {}
-                    @Override
-                    public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[]{}; }
-                }
-            };
-
-            final SSLContext sslContext = SSLContext.getInstance("SSL");
-            sslContext.init(null, trustAllCerts, new java.security.SecureRandom());
-            final SSLSocketFactory sslSocketFactory = sslContext.getSocketFactory();
-
-            OkHttpClient.Builder builder = new OkHttpClient.Builder();
-            builder.sslSocketFactory(sslSocketFactory, (X509TrustManager)trustAllCerts[0]);
-            builder.hostnameVerifier((hostname, session) -> true);
-            builder.readTimeout(Duration.ofMinutes(20));
-            builder.writeTimeout(Duration.ofMinutes(20));
-            builder.connectTimeout(Duration.ofMinutes(20));
-
-            return builder.build();
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
+    private final RetryPolicy<Response> retryPolicy = HttpClientUtils.createRetryPolicy();
     private final String baseUrl;
     private final String apiKey;
-    private final OkHttpClient client = getUnsafeOkHttpClient();
-    private final ConcurrentHashMap<Integer, CachedTagName> tagNameCache = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<Integer, CachedMetadataName> metadataNameCache = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<Integer, CachedAnnotationName> annotationNameCache = new ConcurrentHashMap<>();
+    private final OkHttpClient client = HttpClientUtils.getUnsafeOkHttpClient();
+    private final NameCacheService nameCacheService;
 
-    DxrClient(String baseUrl, String apiKey) {
+    DxrClient(String baseUrl, String apiKey, NameCacheService nameCacheService) {
         this.baseUrl = baseUrl;
         this.apiKey = apiKey;
+        this.nameCacheService = nameCacheService;
     }
 
     private Response executeWithRetry(Request request) throws IOException {
-        try {
-            return Failsafe.with(retryPolicy).get(() -> client.newCall(request).execute());
-        } catch (Exception e) {
-            if (e instanceof IOException io) {
-                throw io;
-            }
-            throw new IOException(e);
-        }
+        return HttpClientUtils.executeWithRetry(client, retryPolicy, request);
     }
 
 
@@ -196,140 +117,9 @@ class DxrClient {
         }
     }
 
-    String getTagName(int tagId) throws IOException {
-        // Check cache first
-        CachedTagName cached = tagNameCache.get(tagId);
-        long currentTime = System.currentTimeMillis();
-        
-        if (cached != null && (currentTime - cached.timestamp()) < TAG_CACHE_EXPIRY_MS) {
-            logger.debug("Using cached tag name for tag {}: {}", tagId, cached.name());
-            return cached.name();
-        }
-        
-        // Cache miss or expired, fetch from API
-        Request request = new Request.Builder()
-                .url(baseUrl + "/tags/" + tagId)
-                .header("Authorization", "Bearer " + apiKey)
-                .get()
-                .build();
-        try (Response response = executeWithRetry(request)) {
-            String body = response.body() != null ? response.body().string() : "";
-            String tagName;
-            
-            if (!response.isSuccessful()) {
-                String errorMsg = "Tag fetch failed: HTTP " + response.code() + " - " + body;
-                logger.error("Failed to fetch tag {} details: {}", tagId, errorMsg);
-                // Return a fallback name instead of throwing exception to not break the entire response
-                tagName = "Tag " + tagId;
-            } else {
-                JSONObject obj = new JSONObject(body);
-                tagName = obj.optString("name", "Tag " + tagId);
-                logger.debug("Fetched tag name for tag {}: {}", tagId, tagName);
-            }
-            
-            // Cache the result (even fallback names to avoid repeated failed API calls)
-            tagNameCache.put(tagId, new CachedTagName(tagName, currentTime));
-            return tagName;
-        }
-    }
-
-    String getMetadataExtractorName(int metadataExtractorId) throws IOException {
-        // Check cache first
-        CachedMetadataName cached = metadataNameCache.get(metadataExtractorId);
-        long currentTime = System.currentTimeMillis();
-        
-        if (cached != null && (currentTime - cached.timestamp()) < TAG_CACHE_EXPIRY_MS) {
-            logger.debug("Using cached metadata extractor name for ID {}: {}", metadataExtractorId, cached.name());
-            return cached.name();
-        }
-        
-        // Cache miss or expired, fetch from API
-        Request request = new Request.Builder()
-                .url(baseUrl + "/metadata-extractors/" + metadataExtractorId)
-                .header("Authorization", "Bearer " + apiKey)
-                .get()
-                .build();
-        try (Response response = executeWithRetry(request)) {
-            String body = response.body() != null ? response.body().string() : "";
-            String extractorName;
-            
-            if (!response.isSuccessful()) {
-                String errorMsg = "Metadata extractor fetch failed: HTTP " + response.code() + " - " + body;
-                logger.error("Failed to fetch metadata extractor {} details: {}", metadataExtractorId, errorMsg);
-                // Return a fallback name instead of throwing exception to not break the entire response
-                extractorName = "Metadata " + metadataExtractorId;
-            } else {
-                JSONObject obj = new JSONObject(body);
-                extractorName = obj.optString("name", "Metadata " + metadataExtractorId);
-                logger.debug("Fetched metadata extractor name for ID {}: {}", metadataExtractorId, extractorName);
-            }
-            
-            // Cache the result (even fallback names to avoid repeated failed API calls)
-            metadataNameCache.put(metadataExtractorId, new CachedMetadataName(extractorName, currentTime));
-            return extractorName;
-        }
-    }
-
-    private void cleanupExpiredTagCacheEntries() {
-        long currentTime = System.currentTimeMillis();
-        tagNameCache.entrySet().removeIf(entry -> 
-            (currentTime - entry.getValue().timestamp()) >= TAG_CACHE_EXPIRY_MS);
-    }
-
-    private void cleanupExpiredMetadataCacheEntries() {
-        long currentTime = System.currentTimeMillis();
-        metadataNameCache.entrySet().removeIf(entry -> 
-            (currentTime - entry.getValue().timestamp()) >= TAG_CACHE_EXPIRY_MS);
-    }
-
-    String getAnnotationName(int annotationId) throws IOException {
-        // Check cache first
-        CachedAnnotationName cached = annotationNameCache.get(annotationId);
-        long currentTime = System.currentTimeMillis();
-        
-        if (cached != null && (currentTime - cached.timestamp()) < TAG_CACHE_EXPIRY_MS) {
-            logger.debug("Using cached annotation name for ID {}: {}", annotationId, cached.name());
-            return cached.name();
-        }
-        
-        // Cache miss or expired, fetch from API
-        Request request = new Request.Builder()
-                .url(baseUrl + "/data-classes/" + annotationId)
-                .header("Authorization", "Bearer " + apiKey)
-                .get()
-                .build();
-        try (Response response = executeWithRetry(request)) {
-            String body = response.body() != null ? response.body().string() : "";
-            String annotationName;
-            
-            if (!response.isSuccessful()) {
-                String errorMsg = "Annotation fetch failed: HTTP " + response.code() + " - " + body;
-                logger.error("Failed to fetch annotation {} details: {}", annotationId, errorMsg);
-                // Return a fallback name instead of throwing exception to not break the entire response
-                annotationName = "Annotation " + annotationId;
-            } else {
-                JSONObject obj = new JSONObject(body);
-                annotationName = obj.optString("name", "Annotation " + annotationId);
-                logger.debug("Fetched annotation name for ID {}: {}", annotationId, annotationName);
-            }
-            
-            // Cache the result (even fallback names to avoid repeated failed API calls)
-            annotationNameCache.put(annotationId, new CachedAnnotationName(annotationName, currentTime));
-            return annotationName;
-        }
-    }
-
-    private void cleanupExpiredAnnotationCacheEntries() {
-        long currentTime = System.currentTimeMillis();
-        annotationNameCache.entrySet().removeIf(entry -> 
-            (currentTime - entry.getValue().timestamp()) >= TAG_CACHE_EXPIRY_MS);
-    }
-
     ClassificationData getTagIds(long scanId) throws IOException {
         // Cleanup expired cache entries periodically
-        cleanupExpiredTagCacheEntries();
-        cleanupExpiredMetadataCacheEntries();
-        cleanupExpiredAnnotationCacheEntries();
+        nameCacheService.cleanupExpiredEntries();
         
         JSONObject item = new JSONObject()
                 .put("parameter", "dxr#datasource_scan_id")
@@ -460,7 +250,7 @@ class DxrClient {
             java.util.List<MetadataItem> extractedMetadata = extractedMetadataMap.entrySet().stream()
                 .map(entry -> {
                     try {
-                        String extractorName = getMetadataExtractorName(entry.getKey());
+                        String extractorName = nameCacheService.getMetadataExtractorName(entry.getKey(), apiKey);
                         return new MetadataItem(entry.getKey(), extractorName, entry.getValue());
                     } catch (IOException e) {
                         logger.warn("Failed to fetch name for metadata extractor {}: {}. Using fallback name.", entry.getKey(), e.getMessage());
@@ -469,12 +259,12 @@ class DxrClient {
                 })
                 .sorted((a, b) -> Integer.compare(a.id(), b.id()))
                 .toList();
-            
+
             // Convert annotation counts map to list of AnnotationStat records with names and phrase matches
             java.util.List<AnnotationStat> annotations = annotationCounts.entrySet().stream()
                 .map(entry -> {
                     try {
-                        String annotationName = getAnnotationName(entry.getKey());
+                        String annotationName = nameCacheService.getAnnotationName(entry.getKey(), apiKey);
                         java.util.List<String> phraseMatches = annotationPhraseMatches.getOrDefault(entry.getKey(), java.util.List.of());
                         return new AnnotationStat(entry.getKey(), annotationName, entry.getValue(), phraseMatches);
                     } catch (IOException e) {
@@ -485,12 +275,12 @@ class DxrClient {
                 })
                 .sorted((a, b) -> Integer.compare(a.id(), b.id()))
                 .toList();
-            
+
             // Convert tag IDs to list of TagItem records with names
             java.util.List<TagItem> tags = tagIds.stream()
                 .map(tagId -> {
                     try {
-                        String tagName = getTagName(tagId);
+                        String tagName = nameCacheService.getTagName(tagId, apiKey);
                         return new TagItem(tagId, tagName);
                     } catch (IOException e) {
                         logger.warn("Failed to fetch name for tag {}: {}. Using fallback name.", tagId, e.getMessage());

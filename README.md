@@ -23,6 +23,10 @@ The server is configured via environment variables:
 - `DXR_MAX_BATCH_SIZE`: Maximum files per batch (e.g., 5)
 - `DXR_BATCH_INTERVAL_MS`: Maximum time to wait for additional files in milliseconds (e.g., 30000)
 - `DXR_JOB_STATUS_POLL_INTERVAL_MS`: Job status polling interval in milliseconds (default: 1000, optional)
+- `DXR_NAME_CACHE_EXPIRY_MS`: Cache expiration time for name lookups in milliseconds (default: 300000 = 5 minutes, optional)
+- `DXR_PRELOAD_TAG_IDS`: Comma-separated list of tag IDs to preload into cache at startup (e.g., "1,2,3", optional)
+- `DXR_PRELOAD_METADATA_EXTRACTOR_IDS`: Comma-separated list of metadata extractor IDs to preload (e.g., "10,20", optional)
+- `DXR_PRELOAD_ANNOTATION_IDS`: Comma-separated list of annotation/data class IDs to preload (e.g., "100,101", optional)
 
 ### API Key Authentication
 
@@ -365,6 +369,7 @@ The application calls the Data X-Ray API at the following endpoints:
 ### Performance Optimizations
 
 - **Intelligent Caching**: All name lookups are cached for 5 minutes to reduce API calls
+- **Cache Preloading**: Optionally preload tag, metadata extractor, and annotation names at startup using `DXR_PRELOAD_*` environment variables to eliminate cold-start latency
 - **Fallback Names**: If name resolution fails, fallback names like "Tag 123" are used
 - **Concurrent Requests**: Name resolution requests are made concurrently for optimal performance
 - **Cache Cleanup**: Expired cache entries are automatically cleaned up to prevent memory leaks

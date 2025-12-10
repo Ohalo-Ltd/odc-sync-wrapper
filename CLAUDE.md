@@ -68,6 +68,7 @@ This is the **ODC Sync Wrapper** - a REST API server for the Data X-Ray on-deman
 - **ClassificationController**: REST controller with `/classify-file` endpoint
 - **FileBatchingService**: Service that batches files and manages synchronous responses
 - **DxrClient**: HTTP client for Data X-Ray API interactions with retry logic
+- **NameCacheService**: Shared cache for tag, metadata extractor, and annotation names with optional preloading
 - **DatasourceContext**: Thread-local storage for datasource IDs
 
 ### Key Design Patterns
@@ -103,6 +104,10 @@ Required:
 
 Optional:
 - `DXR_JOB_STATUS_POLL_INTERVAL_MS`: Job status polling interval in milliseconds (default: 1000)
+- `DXR_NAME_CACHE_EXPIRY_MS`: Cache expiration time for name lookups in milliseconds (default: 300000 = 5 minutes)
+- `DXR_PRELOAD_TAG_IDS`: Comma-separated list of tag IDs to preload into cache at startup (e.g., "1,2,3")
+- `DXR_PRELOAD_METADATA_EXTRACTOR_IDS`: Comma-separated list of metadata extractor IDs to preload (e.g., "10,20")
+- `DXR_PRELOAD_ANNOTATION_IDS`: Comma-separated list of annotation/data class IDs to preload (e.g., "100,101")
 - `RUN_LIVE_TESTS`: Set to "true" to enable live integration tests
 
 ### Sample Data
