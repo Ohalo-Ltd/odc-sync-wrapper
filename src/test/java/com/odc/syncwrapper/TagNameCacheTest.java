@@ -238,7 +238,7 @@ class TagNameCacheTest {
     }
 
     @Test
-    void shouldShareCacheAcrossMultipleDxrClients() throws Exception {
+    void shouldShareCacheEntriesRegardlessOfApiKey() throws Exception {
         MockWebServer server = new MockWebServer();
 
         // Only one tag response - shared cache should prevent second fetch
