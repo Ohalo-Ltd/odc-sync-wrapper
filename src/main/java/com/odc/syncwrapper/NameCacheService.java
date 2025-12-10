@@ -36,7 +36,7 @@ public class NameCacheService {
     @Value("${DXR_BASE_URL}")
     private String baseUrl;
 
-    @Value("${DXR_NAME_cacheExpiryMs:300000}")
+    @Value("${DXR_NAME_CACHE_EXPIRY_MS:300000}")
     private long cacheExpiryMs;
 
     @Value("${DXR_API_KEY:}")
