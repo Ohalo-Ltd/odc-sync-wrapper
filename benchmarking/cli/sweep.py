@@ -99,6 +99,18 @@ def main():
             default=20,
             help="Seconds to wait for container startup (default: 20)",
         )
+        subparser.add_argument(
+            "--batch-interval-ms",
+            type=int,
+            default=1000,
+            help="Batch interval in milliseconds (default: 1000)",
+        )
+        subparser.add_argument(
+            "--max-batch-size",
+            type=int,
+            default=1000,
+            help="Maximum batch size (default: 1000)",
+        )
 
     args = parser.parse_args()
 
@@ -114,6 +126,8 @@ def main():
                     files_per_test=args.files,
                     samples_dir=args.samples_dir,
                     startup_wait_seconds=args.startup_wait,
+                    batch_interval_ms=args.batch_interval_ms,
+                    max_batch_size=args.max_batch_size,
                 )
             )
         elif args.mode == "rate-limited":
@@ -125,6 +139,8 @@ def main():
                     duration_seconds=args.duration,
                     samples_dir=args.samples_dir,
                     startup_wait_seconds=args.startup_wait,
+                    batch_interval_ms=args.batch_interval_ms,
+                    max_batch_size=args.max_batch_size,
                 )
             )
 

@@ -60,6 +60,8 @@ class DatasourceSweep:
         files_per_test: Optional[int] = None,
         samples_dir: Optional[str] = None,
         startup_wait_seconds: Optional[int] = None,
+        batch_interval_ms: Optional[int] = None,
+        max_batch_size: Optional[int] = None,
     ) -> List[TestResult]:
         """
         Run sequential mode tests across datasource counts.
@@ -73,6 +75,8 @@ class DatasourceSweep:
             files_per_test: Number of files per test
             samples_dir: Directory containing sample files
             startup_wait_seconds: Seconds to wait for container startup
+            batch_interval_ms: Batch interval in milliseconds
+            max_batch_size: Maximum batch size
 
         Returns:
             List of test results
@@ -81,6 +85,8 @@ class DatasourceSweep:
         files = files_per_test or SEQUENTIAL_SWEEP_DEFAULTS["files_per_test"]
         samples = samples_dir or SEQUENTIAL_SWEEP_DEFAULTS["samples_dir"]
         wait_seconds = startup_wait_seconds or DOCKER_DEFAULTS["startup_wait_seconds"]
+        batch_interval = batch_interval_ms or DOCKER_DEFAULTS["batch_interval_ms"]
+        batch_size = max_batch_size or DOCKER_DEFAULTS["max_batch_size"]
 
         self.logger.info("=" * 60)
         self.logger.info("Starting Sequential Datasource Sweep")
@@ -89,6 +95,8 @@ class DatasourceSweep:
         self.logger.info(f"  Datasource counts: {counts}")
         self.logger.info(f"  Files per test: {files}")
         self.logger.info(f"  Samples directory: {samples}")
+        self.logger.info(f"  Batch interval: {batch_interval}ms")
+        self.logger.info(f"  Max batch size: {batch_size}")
         self.logger.info("=" * 60)
 
         self.aggregator.clear()
@@ -105,8 +113,8 @@ class DatasourceSweep:
                 dxr_base_url=self.dxr_base_url,
                 dxr_api_key=self.dxr_api_key,
                 first_datasource_id=DOCKER_DEFAULTS["first_datasource_id"],
-                max_batch_size=DOCKER_DEFAULTS["max_batch_size"],
-                batch_interval_ms=DOCKER_DEFAULTS["batch_interval_ms"],
+                max_batch_size=batch_size,
+                batch_interval_ms=batch_interval,
                 job_status_poll_interval_ms=DOCKER_DEFAULTS[
                     "job_status_poll_interval_ms"
                 ],
@@ -131,7 +139,7 @@ class DatasourceSweep:
         # Print final summary
         self.aggregator.print_summary_table(
             title="SEQUENTIAL SWEEP RESULTS",
-            description=f"Mode: Sequential | Files per test: {files} | Samples: {samples}",
+            description=f"Mode: Sequential | Files per test: {files} | Samples: {samples} | Batch: {batch_size}@{batch_interval}ms",
         )
 
         return results
@@ -143,6 +151,8 @@ class DatasourceSweep:
         duration_seconds: Optional[int] = None,
         samples_dir: Optional[str] = None,
         startup_wait_seconds: Optional[int] = None,
+        batch_interval_ms: Optional[int] = None,
+        max_batch_size: Optional[int] = None,
     ) -> List[TestResult]:
         """
         Run rate-limited mode tests across datasource counts.
@@ -157,6 +167,8 @@ class DatasourceSweep:
             duration_seconds: Test duration in seconds
             samples_dir: Directory containing sample files
             startup_wait_seconds: Seconds to wait for container startup
+            batch_interval_ms: Batch interval in milliseconds
+            max_batch_size: Maximum batch size
 
         Returns:
             List of test results
@@ -166,6 +178,8 @@ class DatasourceSweep:
         duration = duration_seconds or RATE_LIMITED_SWEEP_DEFAULTS["duration_seconds"]
         samples = samples_dir or RATE_LIMITED_SWEEP_DEFAULTS["samples_dir"]
         wait_seconds = startup_wait_seconds or DOCKER_DEFAULTS["startup_wait_seconds"]
+        batch_interval = batch_interval_ms or DOCKER_DEFAULTS["batch_interval_ms"]
+        batch_size = max_batch_size or DOCKER_DEFAULTS["max_batch_size"]
 
         self.logger.info("=" * 60)
         self.logger.info("Starting Rate-Limited Datasource Sweep")
@@ -175,6 +189,8 @@ class DatasourceSweep:
         self.logger.info(f"  Files per second: {fps}")
         self.logger.info(f"  Duration: {duration} seconds")
         self.logger.info(f"  Samples directory: {samples}")
+        self.logger.info(f"  Batch interval: {batch_interval}ms")
+        self.logger.info(f"  Max batch size: {batch_size}")
         self.logger.info("=" * 60)
 
         self.aggregator.clear()
@@ -191,8 +207,8 @@ class DatasourceSweep:
                 dxr_base_url=self.dxr_base_url,
                 dxr_api_key=self.dxr_api_key,
                 first_datasource_id=DOCKER_DEFAULTS["first_datasource_id"],
-                max_batch_size=DOCKER_DEFAULTS["max_batch_size"],
-                batch_interval_ms=DOCKER_DEFAULTS["batch_interval_ms"],
+                max_batch_size=batch_size,
+                batch_interval_ms=batch_interval,
                 job_status_poll_interval_ms=DOCKER_DEFAULTS[
                     "job_status_poll_interval_ms"
                 ],
@@ -220,7 +236,7 @@ class DatasourceSweep:
             title="RATE-LIMITED SWEEP RESULTS",
             description=(
                 f"Mode: Rate-Limited | {fps} files/sec for {duration}s | "
-                f"Samples: {samples}"
+                f"Samples: {samples} | Batch: {batch_size}@{batch_interval}ms"
             ),
         )
 
