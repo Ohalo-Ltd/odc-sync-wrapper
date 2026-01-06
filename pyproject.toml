@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "odc-benchmarking"
+version = "1.0.0"
+description = "Load testing framework for ODC Sync Wrapper"
+requires-python = ">=3.9"
+dependencies = [
+    "aiohttp>=3.9.0",
+    "aiofiles>=23.0.0",
+    "matplotlib>=3.9.0",
+    "pandas>=2.2.0",
+    "numpy>=1.26.0",
+]
+
+[project.scripts]
+odc-benchmark = "benchmarking.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["benchmarking*"]

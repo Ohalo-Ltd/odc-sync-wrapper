@@ -317,16 +317,123 @@ This test:
 - Requires only `DXR_API_KEY` environment variable
 - Tests the complete workflow from file upload to classification results
 
-### Load Testing
+### Load Testing & Benchmarking
 
-The project includes Python scripts for comprehensive load testing and performance analysis.
+The project includes a Python benchmarking framework for load testing and performance analysis.
 
-**📖 See [README_PYTHON_SCRIPTS.md](README_PYTHON_SCRIPTS.md) for detailed documentation on:**
-- Installation and setup instructions
-- Available testing scripts (`load-test.py` and `load-test-suite.py`)
-- Usage examples and command-line options
-- Performance metrics and result interpretation
-- Troubleshooting guide
+#### Quick Start
+
+```bash
+# Activate the virtual environment
+source .venv/bin/activate
+
+# Set required environment variables
+export DXR_BASE_URL="https://your-dxr-instance.com"
+export DXR_API_KEY="your-api-key"
+
+# Run a datasource sweep test
+python -m benchmarking sweep sequential --docker-image ghcr.io/ohalo-ltd/odc-sync-wrapper:1.3.0
+```
+
+#### Benchmarking CLI
+
+The `benchmarking` package provides three main commands:
+
+| Command | Description |
+|---------|-------------|
+| `sweep` | Run tests across multiple datasource counts (replaces shell scripts) |
+| `load-test` | Run a single load test (sequential or rate-limited) |
+| `test-suite` | Run multi-rate test suite with charts |
+
+##### Datasource Sweep (`sweep`)
+
+The sweep command automates testing across different `DXR_ODC_DATASOURCE_COUNT` values, starting/stopping Docker containers for each configuration and aggregating results into a single table.
+
+**Sequential sweep** (tests single-file latency):
+```bash
+python -m benchmarking sweep sequential \
+    --docker-image ghcr.io/ohalo-ltd/odc-sync-wrapper:1.3.0 \
+    --counts 1,2,4,8,16,32,64 \
+    --files 10
+```
+
+**Rate-limited sweep** (tests throughput under load):
+```bash
+python -m benchmarking sweep rate-limited \
+    --docker-image ghcr.io/ohalo-ltd/odc-sync-wrapper:1.3.0 \
+    --counts 32,64,128,256 \
+    --files-per-second 20 \
+    --duration 60
+```
+
+**Common options:**
+- `--docker-image` (required): Docker image to test
+- `--counts`: Comma-separated datasource counts to test
+- `--batch-interval-ms`: Batch interval in ms (default: 1000)
+- `--max-batch-size`: Maximum batch size (default: 1000)
+- `--startup-wait`: Seconds to wait for container startup (default: 20)
+
+##### Single Load Test (`load-test`)
+
+Run a single load test against an already-running server:
+
+```bash
+# Sequential mode - sends files one after another
+python -m benchmarking load-test --sequential-mode 10
+
+# Rate-limited mode - sends files at a steady rate
+python -m benchmarking load-test --rate-mode --files-per-second 20 --duration 60
+```
+
+##### Test Suite (`test-suite`)
+
+Run multiple tests at increasing rates with chart generation:
+
+```bash
+python -m benchmarking test-suite --duration 180 --rates 1,2,4,8,16,32
+```
+
+#### Output Format
+
+The sweep command outputs a TSV-formatted table at the end, designed for easy copy/paste into spreadsheets:
+
+```
+============================================================================================================
+                                    RATE-LIMITED SWEEP RESULTS
+============================================================================================================
+Mode: Rate-Limited | 20 files/sec for 60s | Samples: ./samples/plain_txt | Batch: 1000@1000ms
+------------------------------------------------------------------------------------------------------------
+
+DS_Count  Mode          Total  Success  Failed  Error%  Avg_ms    P95_ms    P99_ms    RPS
+32        rate_limited  1200   1200     0       0.00    1234.56   1456.78   1567.89   19.85
+64        rate_limited  1200   1200     0       0.00    987.65    1123.45   1234.56   19.92
+128       rate_limited  1200   1200     0       0.00    756.43    867.89    945.67    19.97
+256       rate_limited  1200   1200     0       0.00    543.21    623.45    678.90    19.99
+
+============================================================================================================
+TSV OUTPUT (copy to spreadsheet):
+============================================================================================================
+DS_Count	Mode	Total	Success	Failed	Error%	Avg_ms	P95_ms	P99_ms	RPS
+32	rate_limited	1200	1200	0	0.00	1234.56	1456.78	1567.89	19.85
+64	rate_limited	1200	1200	0	0.00	987.65	1123.45	1234.56	19.92
+...
+```
+
+#### Environment Variables
+
+The benchmarking tools read these from your environment:
+- `DXR_BASE_URL`: Data X-Ray API base URL (automatically appends `/api` if needed)
+- `DXR_API_KEY`: Personal Access Token for authentication
+
+#### Backwards Compatibility
+
+The original scripts still work as thin wrappers:
+```bash
+python load-test.py --sequential-mode 10
+python load-test-suite.py --duration 180
+```
+
+**📖 See [README_PYTHON_SCRIPTS.md](README_PYTHON_SCRIPTS.md) for additional documentation.**
 
 ## Data X-Ray API Endpoints Used
 
