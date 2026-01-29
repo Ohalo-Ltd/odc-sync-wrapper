@@ -10,7 +10,7 @@ try:
     from ..core.models import AsyncTestConfig, AsyncTestResult, SweepResult
     from ..core.async_tester import AsyncTester
     from ..results.aggregator import AsyncResultAggregator
-except ImportError:
+except (ImportError, ValueError):
     from core.models import AsyncTestConfig, AsyncTestResult, SweepResult
     from core.async_tester import AsyncTester
     from results.aggregator import AsyncResultAggregator

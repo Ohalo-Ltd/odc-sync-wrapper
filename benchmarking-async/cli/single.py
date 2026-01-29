@@ -10,7 +10,7 @@ try:
     from ..core.async_tester import AsyncTester
     from ..results.aggregator import AsyncResultAggregator
     from ..results.charts import generate_single_test_chart
-except ImportError:
+except (ImportError, ValueError):
     from core.models import AsyncTestConfig
     from core.async_tester import AsyncTester
     from results.aggregator import AsyncResultAggregator
