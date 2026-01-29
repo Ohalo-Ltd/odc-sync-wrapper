@@ -13,7 +13,7 @@ from typing import List, Tuple, Optional
 try:
     from .models import AsyncTestConfig, AsyncTestResult, JobResult
     from .sample_loader import SampleLoader
-except ImportError:
+except (ImportError, ValueError):
     from core.models import AsyncTestConfig, AsyncTestResult, JobResult
     from core.sample_loader import SampleLoader
 

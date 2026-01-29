@@ -11,7 +11,7 @@ try:
     from ..core.models import AsyncTestConfig
     from ..sweeps.file_size_sweep import FileSizeSweep
     from ..results.charts import generate_sweep_charts
-except ImportError:
+except (ImportError, ValueError):
     from core.models import AsyncTestConfig
     from sweeps.file_size_sweep import FileSizeSweep
     from results.charts import generate_sweep_charts

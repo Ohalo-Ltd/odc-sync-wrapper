@@ -25,11 +25,11 @@ source .venv/bin/activate
 Test against one directory of sample files:
 
 ```bash
-python __main__.py single \
+python3 __main__.py single \
     --server-url https://dev.dataxray.io \
     --datasource-id 100 \
     --token $DXR_API_KEY \
-    --samples-dir samples/100K
+    --samples-dir samples_dir/100K
 ```
 
 ### File Size Sweep
@@ -37,11 +37,11 @@ python __main__.py single \
 Run a sweep across multiple directories (different file sizes):
 
 ```bash
-python __main__.py sweep \
+python3 __main__.py sweep \
     --server-url https://dev.dataxray.io \
     --datasource-id 100 \
     --token $DXR_API_KEY \
-    --directories samples/100K,samples/1GB,samples/2GB \
+    --directories samples_dir/100K,samples_dir/1GB,samples_dir/2GB \
     --output results.tsv \
     --chart results.png
 ```
@@ -53,7 +53,7 @@ python __main__.py sweep \
 Run a load test against one directory of sample files.
 
 ```bash
-python __main__.py single [options]
+python3 __main__.py single [options]
 ```
 
 #### Required Arguments
@@ -84,26 +84,26 @@ python __main__.py single [options]
 
 ```bash
 # Basic test
-python __main__.py single \
+python3 __main__.py single \
     --server-url https://dev.dataxray.io \
     --datasource-id 100 \
     --token $DXR_API_KEY \
-    --samples-dir samples/100K
+    --samples-dir samples_dir/100K
 
 # Test with batching (5 files per request)
-python __main__.py single \
+python3 __main__.py single \
     --server-url https://dev.dataxray.io \
     --datasource-id 100 \
     --token $DXR_API_KEY \
-    --samples-dir samples/1GB \
+    --samples-dir samples_dir/1GB \
     --files-per-request 5
 
 # Parallel test with 3 concurrent requests
-python __main__.py single \
+python3 __main__.py single \
     --server-url https://dev.dataxray.io \
     --datasource-id 100 \
     --token $DXR_API_KEY \
-    --samples-dir samples/100K \
+    --samples-dir samples_dir/100K \
     --concurrency 3 \
     --repeat 10
 ```
@@ -113,7 +113,7 @@ python __main__.py single \
 Run a benchmark sweep across multiple directories (representing different file sizes).
 
 ```bash
-python __main__.py sweep [options]
+python3 __main__.py sweep [options]
 ```
 
 #### Required Arguments
@@ -150,25 +150,25 @@ python __main__.py sweep [options]
 
 ```bash
 # Basic sweep
-python __main__.py sweep \
+python3 __main__.py sweep \
     --server-url https://dev.dataxray.io \
     --datasource-id 100 \
     --token $DXR_API_KEY \
-    --directories samples/100K,samples/1GB,samples/2GB
+    --directories samples_dir/100K,samples_dir/1GB,samples_dir/2GB
 
 # Sweep with batching and exports
-python __main__.py sweep \
+python3 __main__.py sweep \
     --server-url https://dev.dataxray.io \
     --datasource-id 100 \
     --token $DXR_API_KEY \
-    --directories samples/100K,samples/500MB,samples/1GB \
+    --directories samples_dir/100K,samples_dir/500MB,samples_dir/1GB \
     --files-per-request 5 \
     --repeat 3 \
     --output results.tsv \
     --chart results.png
 
 # Using a directories file
-python __main__.py sweep \
+python3 __main__.py sweep \
     --server-url https://dev.dataxray.io \
     --datasource-id 100 \
     --token $DXR_API_KEY \
@@ -182,19 +182,19 @@ Use `initialize_sample_data.py` to generate sample files of specific sizes by re
 ### Usage
 
 ```bash
-python initialize_sample_data.py <size> <source_file> [-o output_dir]
+python3 initialize_sample_data.py <size> <source_file> [-o output_dir]
 ```
 
 ### Examples
 
 ```bash
-python initialize_sample_data.py 1K examples_dir/plain/sample.txt
-python initialize_sample_data.py 10K samples/plain/sample.txt
-python initialize_sample_data.py 100K samples/plain/sample.txt
-python initialize_sample_data.py 1M samples/plain/sample.txt
-python initialize_sample_data.py 10M samples/plain/sample.txt
-python initialize_sample_data.py 100M samples/plain/sample.txt
-python initialize_sample_data.py 1G samples/plain/sample.txt
+python3 initialize_sample_data.py 1K examples_dir/plain/sample.txt
+python3 initialize_sample_data.py 10K examples_dir/plain/sample.txt
+python3 initialize_sample_data.py 100K examples_dir/plain/sample.txt
+python3 initialize_sample_data.py 1M examples_dir/plain/sample.txt
+python3 initialize_sample_data.py 10M examples_dir/plain/sample.txt
+python3 initialize_sample_data.py 100M examples_dir/plain/sample.txt
+python3 initialize_sample_data.py 1G examples_dir/plain/sample.txt
 ```
 
 ### Supported Size Formats
@@ -274,7 +274,7 @@ benchmarking-async/
 ├── sweeps/
 │   └── file_size_sweep.py         # Sweep orchestrator
 │
-└── samples/                       # Pre-generated sample files
+└── samples_dir/                       # Pre-generated sample files
     ├── plain/                     # Source data
     ├── 100K/
     ├── 1GB/

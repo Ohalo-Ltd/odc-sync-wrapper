@@ -6,7 +6,7 @@ from typing import List, Optional
 # Support both relative and absolute imports
 try:
     from ..core.models import AsyncTestResult
-except ImportError:
+except (ImportError, ValueError):
     from core.models import AsyncTestResult
 
 
