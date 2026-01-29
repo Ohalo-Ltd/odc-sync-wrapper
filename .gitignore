@@ -7,6 +7,8 @@ target/
 load_test_results*
 benchmark_results*
 saved_results/*
+benchmarking-async/samples_dir/*
+benchmarking-async/sweep_results*
 
 # Python
 __pycache__/
