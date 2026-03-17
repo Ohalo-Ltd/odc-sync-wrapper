@@ -279,6 +279,75 @@ class MetadataExtractionTest {
     }
 
     @Test
+    void shouldReturnPerFileDataWithNoContaminationBetweenBatchedFiles() throws Exception {
+        MockWebServer server = new MockWebServer();
+
+        // Two hits: one with sensitive annotations/category, one with nothing
+        String responseBody = """
+            {
+                "hits": {
+                    "hits": [
+                        {
+                            "_id": "YMGt_ZwB51UG4lS_hCW_",
+                            "_source": {
+                                "ds#file_name": "sensitive_file_abc123",
+                                "dxr#tags": [1],
+                                "ai#category": "Sensitive",
+                                "annotation_stats#count.10": "3",
+                                "annotation.10": ["match1", "match2", "match3"]
+                            }
+                        },
+                        {
+                            "_id": "ZNHu_AxC62VH5mT_iDX0",
+                            "_source": {
+                                "ds#file_name": "clean_file_def456"
+                            }
+                        }
+                    ]
+                }
+            }
+            """;
+
+        server.enqueue(new MockResponse().setResponseCode(200).setBody(responseBody));
+        // Name lookups for sensitive file: tag 1, annotation 10
+        server.enqueue(new MockResponse().setResponseCode(200).setBody("{\"id\": 10, \"name\": \"SSN Pattern\"}"));
+        server.enqueue(new MockResponse().setResponseCode(200).setBody("{\"id\": 1, \"name\": \"Sensitive Data\"}"));
+        server.start();
+
+        String baseUrl = server.url("/").toString().replaceAll("/$", "");
+        NameCacheService nameCacheService = createNameCacheService(baseUrl, "test-key");
+        DxrClient client = new DxrClient(baseUrl, "test-key", nameCacheService);
+
+        java.util.List<String> enhancedFilenames = java.util.List.of("sensitive_file_abc123", "clean_file_def456");
+        java.util.Map<String, DxrClient.ClassificationData> result = client.getTagIdsPerFile(1L, enhancedFilenames);
+
+        // Both files should be present in the result
+        assertEquals(2, result.size());
+
+        // Sensitive file should have its own data
+        assertTrue(result.containsKey("sensitive_file_abc123"));
+        DxrClient.ClassificationData sensitiveData = result.get("sensitive_file_abc123");
+        assertEquals("Sensitive", sensitiveData.category());
+        assertEquals(1, sensitiveData.tags().size());
+        assertEquals("Sensitive Data", sensitiveData.tags().get(0).name());
+        assertEquals(1, sensitiveData.annotations().size());
+        assertEquals(10, sensitiveData.annotations().get(0).id());
+        assertEquals("SSN Pattern", sensitiveData.annotations().get(0).name());
+        assertEquals(3, sensitiveData.annotations().get(0).count());
+        assertEquals(List.of("match1", "match2", "match3"), sensitiveData.annotations().get(0).phraseMatches());
+
+        // Clean file should have empty data - no contamination from the sensitive file
+        assertTrue(result.containsKey("clean_file_def456"));
+        DxrClient.ClassificationData cleanData = result.get("clean_file_def456");
+        assertNull(cleanData.category());
+        assertTrue(cleanData.tags().isEmpty());
+        assertTrue(cleanData.annotations().isEmpty());
+        assertTrue(cleanData.extractedMetadata().isEmpty());
+
+        server.shutdown();
+    }
+
+    @Test
     void shouldExtractAnnotationPhraseMatches() throws Exception {
         try (MockWebServer server = new MockWebServer()) {
             // Mock response with annotation phrase matches

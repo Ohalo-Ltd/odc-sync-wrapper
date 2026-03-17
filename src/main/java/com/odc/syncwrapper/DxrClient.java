@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 
 class DxrClient {
     private static final Logger logger = LoggerFactory.getLogger(DxrClient.class);
@@ -115,6 +116,221 @@ class DxrClient {
             
             return new JobStatus(state, scanId, errorMessage);
         }
+    }
+
+    Map<String, ClassificationData> getTagIdsPerFile(long scanId, List<String> enhancedFilenames) throws IOException {
+        nameCacheService.cleanupExpiredEntries();
+
+        JSONObject item = new JSONObject()
+                .put("parameter", "dxr#datasource_scan_id")
+                .put("value", scanId)
+                .put("type", "number")
+                .put("match_strategy", "exact")
+                .put("operator", "AND")
+                .put("group_id", 0)
+                .put("group_order", 0);
+        JSONArray queryItems = new JSONArray().put(item);
+        JSONObject filter = new JSONObject().put("query_items", queryItems);
+        JSONArray sort = new JSONArray().put(new JSONObject()
+                .put("property", "_score")
+                .put("order", "DESCENDING"));
+        JSONObject payload = new JSONObject()
+                .put("mode", "DXR_JSON_QUERY")
+                .put("datasourceIds", new JSONArray())
+                .put("pageNumber", 0)
+                .put("pageSize", 20)
+                .put("filter", filter)
+                .put("sort", sort);
+        RequestBody body = RequestBody.create(payload.toString(), MediaType.parse("application/json"));
+        Request request = new Request.Builder()
+                .url(baseUrl + "/indexed-files/search")
+                .header("Authorization", "Bearer " + apiKey)
+                .header("Content-Type", "application/json")
+                .post(body)
+                .build();
+        try (Response response = executeWithRetry(request)) {
+            String respBody = response.body() != null ? response.body().string() : "";
+            if (!response.isSuccessful()) {
+                String errorMsg = "Search request failed: HTTP " + response.code() + " - " + respBody;
+                logger.error("Failed to search for scan ID {}: {}", scanId, errorMsg);
+                throw new IOException(errorMsg);
+            }
+
+            java.util.Map<String, ClassificationData> result = new java.util.LinkedHashMap<>();
+            java.util.List<ClassificationData> unmatchedHitData = new java.util.ArrayList<>();
+            java.util.List<String> unmatchedFilenames = new java.util.ArrayList<>(enhancedFilenames);
+
+            JSONObject obj = new JSONObject(respBody);
+            JSONObject hits = obj.optJSONObject("hits");
+            if (hits != null) {
+                JSONArray arr = hits.optJSONArray("hits");
+                if (arr != null) {
+                    for (int i = 0; i < arr.length(); i++) {
+                        JSONObject hit = arr.getJSONObject(i);
+                        String hitIdentifier = extractHitIdentifier(hit);
+                        logger.info("Search hit [{}] identifier: '{}' (expected filenames: {})", i, hitIdentifier, enhancedFilenames);
+
+                        String matchedFilename = findMatchingEnhancedFilename(hitIdentifier, unmatchedFilenames);
+
+                        JSONObject src = hit.optJSONObject("_source");
+                        if (src == null) continue;
+                        ClassificationData data = parseSourceIntoClassificationData(src);
+
+                        if (matchedFilename != null) {
+                            result.put(matchedFilename, data);
+                            unmatchedFilenames.remove(matchedFilename);
+                            logger.info("Matched search hit '{}' to file '{}': {} metadata, {} tags, {} annotations, category: {}",
+                                hitIdentifier, matchedFilename, data.extractedMetadata().size(), data.tags().size(), data.annotations().size(), data.category());
+                        } else {
+                            unmatchedHitData.add(data);
+                        }
+                    }
+                }
+            }
+
+            // Positional fallback: if filename matching failed but hit count equals remaining file count,
+            // assign hits to files by position (order in which they were submitted to the batch job).
+            if (!unmatchedHitData.isEmpty() && unmatchedHitData.size() == unmatchedFilenames.size()) {
+                logger.warn("Filename-based matching did not cover all files for scan ID {}. " +
+                    "Falling back to positional matching for {} remaining hits. " +
+                    "To enable reliable filename matching, check what the '_id' field contains in DXR search responses.",
+                    scanId, unmatchedHitData.size());
+                for (int i = 0; i < unmatchedHitData.size(); i++) {
+                    result.put(unmatchedFilenames.get(i), unmatchedHitData.get(i));
+                }
+            } else if (!unmatchedHitData.isEmpty()) {
+                logger.warn("{} search hits for scan ID {} could not be matched to any file. Result may be incomplete.", unmatchedHitData.size(), scanId);
+            }
+
+            logger.info("Per-file search complete for scan ID {}: {}/{} files matched",
+                scanId, result.size(), enhancedFilenames.size());
+            return result;
+        }
+    }
+
+    private String extractHitIdentifier(JSONObject hit) {
+        JSONObject src = hit.optJSONObject("_source");
+        if (src != null) {
+            String fileName = src.optString("ds#file_name", null);
+            if (fileName != null && !fileName.isEmpty()) return fileName;
+        }
+        return hit.optString("_id", null);
+    }
+
+    private String findMatchingEnhancedFilename(String identifier, List<String> enhancedFilenames) {
+        if (identifier == null) return null;
+        if (enhancedFilenames.contains(identifier)) return identifier;
+        for (String f : enhancedFilenames) {
+            if (identifier.endsWith("/" + f) || identifier.endsWith(f)) return f;
+        }
+        for (String f : enhancedFilenames) {
+            if (identifier.contains(f)) return f;
+        }
+        return null;
+    }
+
+    private ClassificationData parseSourceIntoClassificationData(JSONObject src) {
+        java.util.Map<Integer, String> extractedMetadataMap = new java.util.HashMap<>();
+        java.util.Set<Integer> tagIds = new java.util.HashSet<>();
+        String category = null;
+        java.util.Map<Integer, Integer> annotationCounts = new java.util.HashMap<>();
+        java.util.Map<Integer, java.util.List<String>> annotationPhraseMatches = new java.util.HashMap<>();
+
+        for (String key : src.keySet()) {
+            if (key.startsWith("extracted_metadata#")) {
+                try {
+                    int id = Integer.parseInt(key.substring("extracted_metadata#".length()));
+                    Object value = src.get(key);
+                    if (value != null) extractedMetadataMap.put(id, String.valueOf(value));
+                } catch (NumberFormatException e) {
+                    logger.debug("Skipping invalid metadata key: {}", key);
+                }
+            } else if (key.startsWith("annotation_stats#count.")) {
+                try {
+                    int id = Integer.parseInt(key.substring("annotation_stats#count.".length()));
+                    Object value = src.get(key);
+                    if (value != null) annotationCounts.put(id, Integer.parseInt(String.valueOf(value)));
+                } catch (NumberFormatException e) {
+                    logger.debug("Skipping invalid annotation count key: {}", key);
+                }
+            } else if (key.startsWith("annotation.")) {
+                try {
+                    int id = Integer.parseInt(key.substring("annotation.".length()));
+                    Object value = src.get(key);
+                    if (value instanceof JSONArray phraseArray) {
+                        java.util.List<String> phrases = new java.util.ArrayList<>();
+                        for (int j = 0; j < phraseArray.length(); j++) {
+                            Object phrase = phraseArray.get(j);
+                            if (phrase != null) phrases.add(String.valueOf(phrase));
+                        }
+                        annotationPhraseMatches.put(id, phrases);
+                    }
+                } catch (NumberFormatException e) {
+                    logger.debug("Skipping invalid annotation phrase match key: {}", key);
+                }
+            }
+        }
+
+        if (src.has("dxr#tags")) {
+            Object tagsValue = src.get("dxr#tags");
+            if (tagsValue instanceof JSONArray tagsArray) {
+                for (int j = 0; j < tagsArray.length(); j++) {
+                    try {
+                        tagIds.add(tagsArray.getInt(j));
+                    } catch (Exception e) {
+                        logger.debug("Skipping invalid tag ID: {}", tagsArray.opt(j));
+                    }
+                }
+            }
+        }
+
+        if (src.has("ai#category")) {
+            Object categoryValue = src.get("ai#category");
+            if (categoryValue != null) category = String.valueOf(categoryValue);
+        }
+
+        java.util.List<MetadataItem> extractedMetadata = extractedMetadataMap.entrySet().stream()
+            .map(entry -> {
+                try {
+                    String name = nameCacheService.getMetadataExtractorName(entry.getKey(), apiKey);
+                    return new MetadataItem(entry.getKey(), name, entry.getValue());
+                } catch (IOException e) {
+                    logger.warn("Failed to fetch name for metadata extractor {}: {}. Using fallback name.", entry.getKey(), e.getMessage());
+                    return new MetadataItem(entry.getKey(), "Metadata " + entry.getKey(), entry.getValue());
+                }
+            })
+            .sorted((a, b) -> Integer.compare(a.id(), b.id()))
+            .toList();
+
+        java.util.List<AnnotationStat> annotations = annotationCounts.entrySet().stream()
+            .map(entry -> {
+                try {
+                    String name = nameCacheService.getAnnotationName(entry.getKey(), apiKey);
+                    java.util.List<String> phrases = annotationPhraseMatches.getOrDefault(entry.getKey(), java.util.List.of());
+                    return new AnnotationStat(entry.getKey(), name, entry.getValue(), phrases);
+                } catch (IOException e) {
+                    logger.warn("Failed to fetch name for annotation {}: {}. Using fallback name.", entry.getKey(), e.getMessage());
+                    java.util.List<String> phrases = annotationPhraseMatches.getOrDefault(entry.getKey(), java.util.List.of());
+                    return new AnnotationStat(entry.getKey(), "Annotation " + entry.getKey(), entry.getValue(), phrases);
+                }
+            })
+            .sorted((a, b) -> Integer.compare(a.id(), b.id()))
+            .toList();
+
+        java.util.List<TagItem> tags = tagIds.stream()
+            .map(tagId -> {
+                try {
+                    String name = nameCacheService.getTagName(tagId, apiKey);
+                    return new TagItem(tagId, name);
+                } catch (IOException e) {
+                    logger.warn("Failed to fetch name for tag {}: {}. Using fallback name.", tagId, e.getMessage());
+                    return new TagItem(tagId, "Tag " + tagId);
+                }
+            })
+            .sorted((a, b) -> Integer.compare(a.id(), b.id()))
+            .toList();
+
+        return new ClassificationData(extractedMetadata, tags, category, annotations);
     }
 
     ClassificationData getTagIds(long scanId) throws IOException {

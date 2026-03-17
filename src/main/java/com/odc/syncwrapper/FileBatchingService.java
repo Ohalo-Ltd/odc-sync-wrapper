@@ -237,10 +237,21 @@ public class FileBatchingService {
 
                 if ("FINISHED".equals(status.state())) {
                     logger.info("Job {} completed successfully. Fetching classification results for {} files", jobId, batch.size());
-                    DxrClient.ClassificationData classificationData = effectiveClient.getTagIds(status.datasourceScanId());
+                    java.util.List<String> enhancedFilenames = fileDataList.stream()
+                        .map(FileData::enhancedFilename)
+                        .toList();
+                    java.util.Map<String, DxrClient.ClassificationData> perFileData =
+                        effectiveClient.getTagIdsPerFile(status.datasourceScanId(), enhancedFilenames);
                     for (int i = 0; i < batch.size() && i < fileDataList.size(); i++) {
                         FileRequest request = batch.get(i);
                         FileData fileData = fileDataList.get(i);
+                        DxrClient.ClassificationData classificationData = perFileData.get(fileData.enhancedFilename());
+                        if (classificationData == null) {
+                            logger.warn("No classification data found for file '{}' (enhanced: '{}'). Returning empty result.",
+                                fileData.originalFilename(), fileData.enhancedFilename());
+                            classificationData = new DxrClient.ClassificationData(
+                                Collections.emptyList(), Collections.emptyList(), null, Collections.emptyList());
+                        }
                         // Convert DxrClient records to FileBatchingService records
                         java.util.List<MetadataItem> extractedMetadata = classificationData.extractedMetadata().stream()
                             .map(item -> new MetadataItem(item.id(), item.name(), item.value()))
@@ -251,7 +262,7 @@ public class FileBatchingService {
                         java.util.List<TagItem> tags = classificationData.tags().stream()
                             .map(tag -> new TagItem(tag.id(), tag.name()))
                             .toList();
-                        logger.info("File '{}' classified successfully with {} metadata fields, {} tags, {} annotations", 
+                        logger.info("File '{}' classified successfully with {} metadata fields, {} tags, {} annotations",
                             fileData.originalFilename(), extractedMetadata.size(), tags.size(), annotations.size());
                         FileClassificationResult result = new FileClassificationResult(
                             fileData.originalFilename(),
