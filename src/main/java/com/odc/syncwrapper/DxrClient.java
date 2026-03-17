@@ -157,7 +157,6 @@ class DxrClient {
             }
 
             java.util.Map<String, ClassificationData> result = new java.util.LinkedHashMap<>();
-            java.util.List<ClassificationData> unmatchedHitData = new java.util.ArrayList<>();
             java.util.List<String> unmatchedFilenames = new java.util.ArrayList<>(enhancedFilenames);
 
             JSONObject obj = new JSONObject(respBody);
@@ -168,40 +167,28 @@ class DxrClient {
                     for (int i = 0; i < arr.length(); i++) {
                         JSONObject hit = arr.getJSONObject(i);
                         String hitIdentifier = extractHitIdentifier(hit);
-                        logger.debug("Search hit [{}] identifier: '{}' (expected filenames: {})", i, hitIdentifier, enhancedFilenames);
+                        logger.debug("Search hit [{}] identifier: '{}'", i, hitIdentifier);
 
                         String matchedFilename = findMatchingEnhancedFilename(hitIdentifier, unmatchedFilenames);
+                        if (matchedFilename == null) {
+                            logger.warn("Search hit '{}' for scan ID {} did not match any expected file. Skipping.", hitIdentifier, scanId);
+                            continue;
+                        }
 
                         JSONObject src = hit.optJSONObject("_source");
                         if (src == null) continue;
                         ClassificationData data = parseSourceIntoClassificationData(src);
-
-                        if (matchedFilename != null) {
-                            result.put(matchedFilename, data);
-                            unmatchedFilenames.remove(matchedFilename);
-                            logger.info("Matched search hit '{}' to file '{}': {} metadata, {} tags, {} annotations, category: {}",
-                                hitIdentifier, matchedFilename, data.extractedMetadata().size(), data.tags().size(), data.annotations().size(), data.category());
-                        } else {
-                            unmatchedHitData.add(data);
-                        }
+                        result.put(matchedFilename, data);
+                        unmatchedFilenames.remove(matchedFilename);
+                        logger.info("Matched search hit '{}' to file '{}': {} metadata, {} tags, {} annotations, category: {}",
+                            hitIdentifier, matchedFilename, data.extractedMetadata().size(), data.tags().size(), data.annotations().size(), data.category());
                     }
                 }
             }
 
-            // Positional fallback: if filename matching failed but hit count equals remaining file count,
-            // assign hits to files by position (order in which they were submitted to the batch job).
-            if (!unmatchedHitData.isEmpty() && unmatchedHitData.size() == unmatchedFilenames.size()) {
-                logger.warn("Filename-based matching did not cover all files for scan ID {}. " +
-                    "Falling back to positional matching for {} remaining hits. " +
-                    "To enable reliable filename matching, check what the '_id' field contains in DXR search responses.",
-                    scanId, unmatchedHitData.size());
-                for (int i = 0; i < unmatchedHitData.size(); i++) {
-                    result.put(unmatchedFilenames.get(i), unmatchedHitData.get(i));
-                }
-            } else if (!unmatchedHitData.isEmpty()) {
-                logger.warn("{} search hits for scan ID {} could not be matched to any file. Result may be incomplete.", unmatchedHitData.size(), scanId);
+            if (!unmatchedFilenames.isEmpty()) {
+                logger.warn("No search hit found for {} file(s) in scan ID {}: {}", unmatchedFilenames.size(), scanId, unmatchedFilenames);
             }
-
             logger.info("Per-file search complete for scan ID {}: {}/{} files matched",
                 scanId, result.size(), enhancedFilenames.size());
             return result;

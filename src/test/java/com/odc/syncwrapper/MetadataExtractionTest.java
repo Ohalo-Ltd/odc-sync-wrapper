@@ -22,6 +22,7 @@ class MetadataExtractionTest {
                     "hits": [
                         {
                             "_source": {
+                                "ds#file_name": "test-file",
                                 "dxr#tags": [1, 2],
                                 "extracted_metadata#1": "SSN",
                                 "extracted_metadata#2": "Credit Card",
@@ -91,6 +92,7 @@ class MetadataExtractionTest {
                     "hits": [
                         {
                             "_source": {
+                                "ds#file_name": "test-file",
                                 "dxr#tags": [3],
                                 "some_other_field": "value"
                             }
@@ -136,6 +138,7 @@ class MetadataExtractionTest {
                     "hits": [
                         {
                             "_source": {
+                                "ds#file_name": "test-file",
                                 "dxr#tags": [99],
                                 "some_other_field": "value"
                             }
@@ -180,6 +183,7 @@ class MetadataExtractionTest {
                     "hits": [
                         {
                             "_source": {
+                                "ds#file_name": "test-file",
                                 "dxr#tags": [1],
                                 "annotation_stats#count.10": "5",
                                 "annotation_stats#count.20": "3"
@@ -245,6 +249,7 @@ class MetadataExtractionTest {
                     "hits": [
                         {
                             "_source": {
+                                "ds#file_name": "test-file",
                                 "annotation_stats#count.99": "2"
                             }
                         }
@@ -358,6 +363,7 @@ class MetadataExtractionTest {
                         "hits": [
                             {
                                 "_source": {
+                                    "ds#file_name": "test-file",
                                     "annotation_stats#count.18": "2",
                                     "annotation.18": [
                                         "Lorem",

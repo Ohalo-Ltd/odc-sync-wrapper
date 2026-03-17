@@ -22,6 +22,7 @@ class TagNameCacheTest {
                     "hits": [
                         {
                             "_source": {
+                                "ds#file_name": "test-file",
                                 "dxr#tags": [1, 1],
                                 "extracted_metadata#1": "SSN"
                             }
