@@ -237,10 +237,10 @@ public class FileBatchingService {
 
                 if ("FINISHED".equals(status.state())) {
                     logger.info("Job {} completed successfully. Fetching classification results for {} files", jobId, batch.size());
-                    java.util.List<String> enhancedFilenames = fileDataList.stream()
+                    List<String> enhancedFilenames = fileDataList.stream()
                         .map(FileData::enhancedFilename)
                         .toList();
-                    java.util.Map<String, DxrClient.ClassificationData> perFileData =
+                    Map<String, DxrClient.ClassificationData> perFileData =
                         effectiveClient.getTagIdsPerFile(status.datasourceScanId(), enhancedFilenames);
                     for (int i = 0; i < batch.size() && i < fileDataList.size(); i++) {
                         FileRequest request = batch.get(i);

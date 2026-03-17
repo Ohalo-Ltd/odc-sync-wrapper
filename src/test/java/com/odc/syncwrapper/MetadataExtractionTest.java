@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.MockResponse;
 import java.util.List;
+import java.util.Map;
 
 import static com.odc.syncwrapper.TestHelper.createNameCacheService;
 import static org.junit.jupiter.api.Assertions.*;
@@ -55,7 +56,7 @@ class MetadataExtractionTest {
         NameCacheService nameCacheService = createNameCacheService(baseUrl, "test-key");
         DxrClient client = new DxrClient(baseUrl, "test-key", nameCacheService);
 
-        DxrClient.ClassificationData data = client.getTagIds(1);
+        DxrClient.ClassificationData data = client.getTagIdsPerFile(1L, List.of("test-file")).get("test-file");
 
         // Verify metadata extraction
         List<DxrClient.MetadataItem> metadata = data.extractedMetadata();
@@ -112,7 +113,7 @@ class MetadataExtractionTest {
         NameCacheService nameCacheService = createNameCacheService(baseUrl, "test-key");
         DxrClient client = new DxrClient(baseUrl, "test-key", nameCacheService);
         
-        DxrClient.ClassificationData data = client.getTagIds(1);
+        DxrClient.ClassificationData data = client.getTagIdsPerFile(1L, List.of("test-file")).get("test-file");
         
         assertTrue(data.extractedMetadata().isEmpty());
         
@@ -157,7 +158,7 @@ class MetadataExtractionTest {
         NameCacheService nameCacheService = createNameCacheService(baseUrl, "test-key");
         DxrClient client = new DxrClient(baseUrl, "test-key", nameCacheService);
 
-        DxrClient.ClassificationData data = client.getTagIds(1);
+        DxrClient.ClassificationData data = client.getTagIdsPerFile(1L, List.of("test-file")).get("test-file");
 
         // Verify tags extraction with fallback name when API call fails
         List<DxrClient.TagItem> tags = data.tags();
@@ -209,7 +210,7 @@ class MetadataExtractionTest {
         NameCacheService nameCacheService = createNameCacheService(baseUrl, "test-key");
         DxrClient client = new DxrClient(baseUrl, "test-key", nameCacheService);
 
-        DxrClient.ClassificationData data = client.getTagIds(1);
+        DxrClient.ClassificationData data = client.getTagIdsPerFile(1L, List.of("test-file")).get("test-file");
 
         // Verify annotation extraction with names
         List<DxrClient.AnnotationStat> annotations = data.annotations();
@@ -265,7 +266,7 @@ class MetadataExtractionTest {
         NameCacheService nameCacheService = createNameCacheService(baseUrl, "test-key");
         DxrClient client = new DxrClient(baseUrl, "test-key", nameCacheService);
 
-        DxrClient.ClassificationData data = client.getTagIds(1);
+        DxrClient.ClassificationData data = client.getTagIdsPerFile(1L, List.of("test-file")).get("test-file");
 
         // Verify annotation extraction with fallback name when API call fails
         List<DxrClient.AnnotationStat> annotations = data.annotations();
@@ -318,8 +319,8 @@ class MetadataExtractionTest {
         NameCacheService nameCacheService = createNameCacheService(baseUrl, "test-key");
         DxrClient client = new DxrClient(baseUrl, "test-key", nameCacheService);
 
-        java.util.List<String> enhancedFilenames = java.util.List.of("sensitive_file_abc123", "clean_file_def456");
-        java.util.Map<String, DxrClient.ClassificationData> result = client.getTagIdsPerFile(1L, enhancedFilenames);
+        List<String> enhancedFilenames = List.of("sensitive_file_abc123", "clean_file_def456");
+        Map<String, DxrClient.ClassificationData> result = client.getTagIdsPerFile(1L, enhancedFilenames);
 
         // Both files should be present in the result
         assertEquals(2, result.size());
@@ -382,7 +383,7 @@ class MetadataExtractionTest {
             NameCacheService nameCacheService = createNameCacheService(baseUrl, "test-key");
             DxrClient client = new DxrClient(baseUrl, "test-key", nameCacheService);
 
-            DxrClient.ClassificationData data = client.getTagIds(1);
+            DxrClient.ClassificationData data = client.getTagIdsPerFile(1L, List.of("test-file")).get("test-file");
 
             // Verify annotation extraction with phrase matches
             List<DxrClient.AnnotationStat> annotations = data.annotations();

@@ -58,7 +58,7 @@ public class DxrClientRetryTest {
             String baseUrl = server.url("/").toString().replaceAll("/$", "");
             NameCacheService nameCacheService = createNameCacheService(baseUrl, "key");
             DxrClient client = new DxrClient(baseUrl, "key", nameCacheService);
-            client.getTagIds(1);
+            client.getTagIdsPerFile(1L, List.of("test-file"));
             assertEquals(3, server.getRequestCount());
         }
     }
