@@ -17,3 +17,23 @@ __pycache__/
 dist/
 build/
 .eggs/
+
+######################
+# IntelliJ
+######################
+.idea/
+*.iml
+*.iws
+*.ipr
+*.ids
+*.orig
+classes/
+out/
+**/.idea
+.run
+
+######################
+# Visual Studio Code
+######################
+.vscode/
+*.code-workspace

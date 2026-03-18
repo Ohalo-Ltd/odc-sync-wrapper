@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.MockResponse;
 import java.util.List;
+import java.util.Map;
 
 import static com.odc.syncwrapper.TestHelper.createNameCacheService;
 import static org.junit.jupiter.api.Assertions.*;
@@ -21,6 +22,7 @@ class MetadataExtractionTest {
                     "hits": [
                         {
                             "_source": {
+                                "ds#file_name": "test-file",
                                 "dxr#tags": [1, 2],
                                 "extracted_metadata#1": "SSN",
                                 "extracted_metadata#2": "Credit Card",
@@ -55,7 +57,7 @@ class MetadataExtractionTest {
         NameCacheService nameCacheService = createNameCacheService(baseUrl, "test-key");
         DxrClient client = new DxrClient(baseUrl, "test-key", nameCacheService);
 
-        DxrClient.ClassificationData data = client.getTagIds(1);
+        DxrClient.ClassificationData data = client.getTagIdsPerFile(1L, List.of("test-file")).get("test-file");
 
         // Verify metadata extraction
         List<DxrClient.MetadataItem> metadata = data.extractedMetadata();
@@ -90,6 +92,7 @@ class MetadataExtractionTest {
                     "hits": [
                         {
                             "_source": {
+                                "ds#file_name": "test-file",
                                 "dxr#tags": [3],
                                 "some_other_field": "value"
                             }
@@ -112,7 +115,7 @@ class MetadataExtractionTest {
         NameCacheService nameCacheService = createNameCacheService(baseUrl, "test-key");
         DxrClient client = new DxrClient(baseUrl, "test-key", nameCacheService);
         
-        DxrClient.ClassificationData data = client.getTagIds(1);
+        DxrClient.ClassificationData data = client.getTagIdsPerFile(1L, List.of("test-file")).get("test-file");
         
         assertTrue(data.extractedMetadata().isEmpty());
         
@@ -135,6 +138,7 @@ class MetadataExtractionTest {
                     "hits": [
                         {
                             "_source": {
+                                "ds#file_name": "test-file",
                                 "dxr#tags": [99],
                                 "some_other_field": "value"
                             }
@@ -157,7 +161,7 @@ class MetadataExtractionTest {
         NameCacheService nameCacheService = createNameCacheService(baseUrl, "test-key");
         DxrClient client = new DxrClient(baseUrl, "test-key", nameCacheService);
 
-        DxrClient.ClassificationData data = client.getTagIds(1);
+        DxrClient.ClassificationData data = client.getTagIdsPerFile(1L, List.of("test-file")).get("test-file");
 
         // Verify tags extraction with fallback name when API call fails
         List<DxrClient.TagItem> tags = data.tags();
@@ -179,6 +183,7 @@ class MetadataExtractionTest {
                     "hits": [
                         {
                             "_source": {
+                                "ds#file_name": "test-file",
                                 "dxr#tags": [1],
                                 "annotation_stats#count.10": "5",
                                 "annotation_stats#count.20": "3"
@@ -209,7 +214,7 @@ class MetadataExtractionTest {
         NameCacheService nameCacheService = createNameCacheService(baseUrl, "test-key");
         DxrClient client = new DxrClient(baseUrl, "test-key", nameCacheService);
 
-        DxrClient.ClassificationData data = client.getTagIds(1);
+        DxrClient.ClassificationData data = client.getTagIdsPerFile(1L, List.of("test-file")).get("test-file");
 
         // Verify annotation extraction with names
         List<DxrClient.AnnotationStat> annotations = data.annotations();
@@ -244,6 +249,7 @@ class MetadataExtractionTest {
                     "hits": [
                         {
                             "_source": {
+                                "ds#file_name": "test-file",
                                 "annotation_stats#count.99": "2"
                             }
                         }
@@ -265,7 +271,7 @@ class MetadataExtractionTest {
         NameCacheService nameCacheService = createNameCacheService(baseUrl, "test-key");
         DxrClient client = new DxrClient(baseUrl, "test-key", nameCacheService);
 
-        DxrClient.ClassificationData data = client.getTagIds(1);
+        DxrClient.ClassificationData data = client.getTagIdsPerFile(1L, List.of("test-file")).get("test-file");
 
         // Verify annotation extraction with fallback name when API call fails
         List<DxrClient.AnnotationStat> annotations = data.annotations();
@@ -274,6 +280,75 @@ class MetadataExtractionTest {
         assertEquals("Annotation 99", annotations.get(0).name()); // Should fall back to "Annotation {id}"
         assertEquals(2, annotations.get(0).count());
         assertTrue(annotations.get(0).phraseMatches().isEmpty()); // No phrase matches in this test
+
+        server.shutdown();
+    }
+
+    @Test
+    void shouldReturnPerFileDataWithNoContaminationBetweenBatchedFiles() throws Exception {
+        MockWebServer server = new MockWebServer();
+
+        // Two hits: one with sensitive annotations/category, one with nothing
+        String responseBody = """
+            {
+                "hits": {
+                    "hits": [
+                        {
+                            "_id": "YMGt_ZwB51UG4lS_hCW_",
+                            "_source": {
+                                "ds#file_name": "sensitive_file_abc123",
+                                "dxr#tags": [1],
+                                "ai#category": "Sensitive",
+                                "annotation_stats#count.10": "3",
+                                "annotation.10": ["match1", "match2", "match3"]
+                            }
+                        },
+                        {
+                            "_id": "ZNHu_AxC62VH5mT_iDX0",
+                            "_source": {
+                                "ds#file_name": "clean_file_def456"
+                            }
+                        }
+                    ]
+                }
+            }
+            """;
+
+        server.enqueue(new MockResponse().setResponseCode(200).setBody(responseBody));
+        // Name lookups for sensitive file: tag 1, annotation 10
+        server.enqueue(new MockResponse().setResponseCode(200).setBody("{\"id\": 10, \"name\": \"SSN Pattern\"}"));
+        server.enqueue(new MockResponse().setResponseCode(200).setBody("{\"id\": 1, \"name\": \"Sensitive Data\"}"));
+        server.start();
+
+        String baseUrl = server.url("/").toString().replaceAll("/$", "");
+        NameCacheService nameCacheService = createNameCacheService(baseUrl, "test-key");
+        DxrClient client = new DxrClient(baseUrl, "test-key", nameCacheService);
+
+        List<String> enhancedFilenames = List.of("sensitive_file_abc123", "clean_file_def456");
+        Map<String, DxrClient.ClassificationData> result = client.getTagIdsPerFile(1L, enhancedFilenames);
+
+        // Both files should be present in the result
+        assertEquals(2, result.size());
+
+        // Sensitive file should have its own data
+        assertTrue(result.containsKey("sensitive_file_abc123"));
+        DxrClient.ClassificationData sensitiveData = result.get("sensitive_file_abc123");
+        assertEquals("Sensitive", sensitiveData.category());
+        assertEquals(1, sensitiveData.tags().size());
+        assertEquals("Sensitive Data", sensitiveData.tags().get(0).name());
+        assertEquals(1, sensitiveData.annotations().size());
+        assertEquals(10, sensitiveData.annotations().get(0).id());
+        assertEquals("SSN Pattern", sensitiveData.annotations().get(0).name());
+        assertEquals(3, sensitiveData.annotations().get(0).count());
+        assertEquals(List.of("match1", "match2", "match3"), sensitiveData.annotations().get(0).phraseMatches());
+
+        // Clean file should have empty data - no contamination from the sensitive file
+        assertTrue(result.containsKey("clean_file_def456"));
+        DxrClient.ClassificationData cleanData = result.get("clean_file_def456");
+        assertNull(cleanData.category());
+        assertTrue(cleanData.tags().isEmpty());
+        assertTrue(cleanData.annotations().isEmpty());
+        assertTrue(cleanData.extractedMetadata().isEmpty());
 
         server.shutdown();
     }
@@ -288,6 +363,7 @@ class MetadataExtractionTest {
                         "hits": [
                             {
                                 "_source": {
+                                    "ds#file_name": "test-file",
                                     "annotation_stats#count.18": "2",
                                     "annotation.18": [
                                         "Lorem",
@@ -313,7 +389,7 @@ class MetadataExtractionTest {
             NameCacheService nameCacheService = createNameCacheService(baseUrl, "test-key");
             DxrClient client = new DxrClient(baseUrl, "test-key", nameCacheService);
 
-            DxrClient.ClassificationData data = client.getTagIds(1);
+            DxrClient.ClassificationData data = client.getTagIdsPerFile(1L, List.of("test-file")).get("test-file");
 
             // Verify annotation extraction with phrase matches
             List<DxrClient.AnnotationStat> annotations = data.annotations();

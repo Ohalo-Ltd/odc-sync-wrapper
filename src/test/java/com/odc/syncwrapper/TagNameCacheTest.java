@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.RecordedRequest;
+import java.util.List;
 
 import static com.odc.syncwrapper.TestHelper.createNameCacheService;
 import static org.junit.jupiter.api.Assertions.*;
@@ -21,6 +22,7 @@ class TagNameCacheTest {
                     "hits": [
                         {
                             "_source": {
+                                "ds#file_name": "test-file",
                                 "dxr#tags": [1, 1],
                                 "extracted_metadata#1": "SSN"
                             }
@@ -47,7 +49,7 @@ class TagNameCacheTest {
         NameCacheService nameCacheService = createNameCacheService(baseUrl, "test-key");
         DxrClient client = new DxrClient(baseUrl, "test-key", nameCacheService);
 
-        DxrClient.ClassificationData data = client.getTagIds(1);
+        DxrClient.ClassificationData data = client.getTagIdsPerFile(1L, List.of("test-file")).get("test-file");
 
         // Verify we got the tags
         assertEquals(1, data.tags().size());

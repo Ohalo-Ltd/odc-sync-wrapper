@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 
 class DxrClient {
     private static final Logger logger = LoggerFactory.getLogger(DxrClient.class);
@@ -117,10 +118,9 @@ class DxrClient {
         }
     }
 
-    ClassificationData getTagIds(long scanId) throws IOException {
-        // Cleanup expired cache entries periodically
+    Map<String, ClassificationData> getTagIdsPerFile(long scanId, List<String> enhancedFilenames) throws IOException {
         nameCacheService.cleanupExpiredEntries();
-        
+
         JSONObject item = new JSONObject()
                 .put("parameter", "dxr#datasource_scan_id")
                 .put("value", scanId)
@@ -155,11 +155,9 @@ class DxrClient {
                 logger.error("Failed to search for scan ID {}: {}", scanId, errorMsg);
                 throw new IOException(errorMsg);
             }
-            java.util.Map<Integer, String> extractedMetadataMap = new java.util.HashMap<>();
-            java.util.Set<Integer> tagIds = new java.util.HashSet<>();
-            String category = null;
-            java.util.Map<Integer, Integer> annotationCounts = new java.util.HashMap<>();
-            java.util.Map<Integer, java.util.List<String>> annotationPhraseMatches = new java.util.HashMap<>();
+
+            java.util.Map<String, ClassificationData> result = new java.util.LinkedHashMap<>();
+            java.util.List<String> unmatchedFilenames = new java.util.ArrayList<>(enhancedFilenames);
 
             JSONObject obj = new JSONObject(respBody);
             JSONObject hits = obj.optJSONObject("hits");
@@ -168,135 +166,151 @@ class DxrClient {
                 if (arr != null) {
                     for (int i = 0; i < arr.length(); i++) {
                         JSONObject hit = arr.getJSONObject(i);
-                        JSONObject src = hit.optJSONObject("_source");
-                        if (src != null) {
-                            // Extract all metadata fields that start with "extracted_metadata#"
-                            for (String key : src.keySet()) {
-                                if (key.startsWith("extracted_metadata#")) {
-                                    try {
-                                        String idStr = key.substring("extracted_metadata#".length());
-                                        int metadataId = Integer.parseInt(idStr);
-                                        Object value = src.get(key);
-                                        if (value != null) {
-                                            extractedMetadataMap.put(metadataId, String.valueOf(value));
-                                        }
-                                    } catch (NumberFormatException e) {
-                                        logger.debug("Skipping invalid metadata key: {}", key);
-                                    }
-                                } else if (key.startsWith("annotation_stats#count.")) {
-                                    // Extract annotation statistics
-                                    try {
-                                        String idStr = key.substring("annotation_stats#count.".length());
-                                        int annotationId = Integer.parseInt(idStr);
-                                        Object value = src.get(key);
-                                        if (value != null) {
-                                            int count = Integer.parseInt(String.valueOf(value));
-                                            annotationCounts.put(annotationId, count);
-                                        }
-                                    } catch (NumberFormatException e) {
-                                        logger.debug("Skipping invalid annotation count key: {}", key);
-                                    }
-                                } else if (key.startsWith("annotation.")) {
-                                    // Extract annotation phrase matches
-                                    try {
-                                        String idStr = key.substring("annotation.".length());
-                                        int annotationId = Integer.parseInt(idStr);
-                                        Object value = src.get(key);
-                                        if (value instanceof JSONArray) {
-                                            JSONArray phraseArray = (JSONArray) value;
-                                            java.util.List<String> phrases = new java.util.ArrayList<>();
-                                            for (int j = 0; j < phraseArray.length(); j++) {
-                                                Object phrase = phraseArray.get(j);
-                                                if (phrase != null) {
-                                                    phrases.add(String.valueOf(phrase));
-                                                }
-                                            }
-                                            annotationPhraseMatches.put(annotationId, phrases);
-                                        }
-                                    } catch (NumberFormatException e) {
-                                        logger.debug("Skipping invalid annotation phrase match key: {}", key);
-                                    }
-                                }
-                            }
+                        String hitIdentifier = extractHitIdentifier(hit);
+                        logger.debug("Search hit [{}] identifier: '{}'", i, hitIdentifier);
 
-                            // Extract tags from dxr#tags
-                            if (src.has("dxr#tags")) {
-                                Object tagsValue = src.get("dxr#tags");
-                                if (tagsValue instanceof JSONArray tagsArray) {
-                                    for (int j = 0; j < tagsArray.length(); j++) {
-                                        try {
-                                            int tagId = tagsArray.getInt(j);
-                                            tagIds.add(tagId);
-                                        } catch (Exception e) {
-                                            logger.debug("Skipping invalid tag ID: {}", tagsArray.opt(j));
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Extract ai#category (take the first non-null value found)
-                            if (category == null && src.has("ai#category")) {
-                                Object categoryValue = src.get("ai#category");
-                                if (categoryValue != null) {
-                                    category = String.valueOf(categoryValue);
-                                }
-                            }
+                        String matchedFilename = findMatchingEnhancedFilename(hitIdentifier, unmatchedFilenames);
+                        if (matchedFilename == null) {
+                            logger.warn("Search hit '{}' for scan ID {} did not match any expected file. Skipping.", hitIdentifier, scanId);
+                            continue;
                         }
+
+                        JSONObject src = hit.optJSONObject("_source");
+                        if (src == null) continue;
+                        ClassificationData data = parseSourceIntoClassificationData(src);
+                        result.put(matchedFilename, data);
+                        unmatchedFilenames.remove(matchedFilename);
+                        logger.info("Matched search hit '{}' to file '{}': {} metadata, {} tags, {} annotations, category: {}",
+                            hitIdentifier, matchedFilename, data.extractedMetadata().size(), data.tags().size(), data.annotations().size(), data.category());
                     }
                 }
             }
-            
-            // Convert metadata map to list of MetadataItem records with names
-            java.util.List<MetadataItem> extractedMetadata = extractedMetadataMap.entrySet().stream()
-                .map(entry -> {
-                    try {
-                        String extractorName = nameCacheService.getMetadataExtractorName(entry.getKey(), apiKey);
-                        return new MetadataItem(entry.getKey(), extractorName, entry.getValue());
-                    } catch (IOException e) {
-                        logger.warn("Failed to fetch name for metadata extractor {}: {}. Using fallback name.", entry.getKey(), e.getMessage());
-                        return new MetadataItem(entry.getKey(), "Metadata " + entry.getKey(), entry.getValue());
-                    }
-                })
-                .sorted((a, b) -> Integer.compare(a.id(), b.id()))
-                .toList();
 
-            // Convert annotation counts map to list of AnnotationStat records with names and phrase matches
-            java.util.List<AnnotationStat> annotations = annotationCounts.entrySet().stream()
-                .map(entry -> {
-                    try {
-                        String annotationName = nameCacheService.getAnnotationName(entry.getKey(), apiKey);
-                        java.util.List<String> phraseMatches = annotationPhraseMatches.getOrDefault(entry.getKey(), java.util.List.of());
-                        return new AnnotationStat(entry.getKey(), annotationName, entry.getValue(), phraseMatches);
-                    } catch (IOException e) {
-                        logger.warn("Failed to fetch name for annotation {}: {}. Using fallback name.", entry.getKey(), e.getMessage());
-                        java.util.List<String> phraseMatches = annotationPhraseMatches.getOrDefault(entry.getKey(), java.util.List.of());
-                        return new AnnotationStat(entry.getKey(), "Annotation " + entry.getKey(), entry.getValue(), phraseMatches);
-                    }
-                })
-                .sorted((a, b) -> Integer.compare(a.id(), b.id()))
-                .toList();
-
-            // Convert tag IDs to list of TagItem records with names
-            java.util.List<TagItem> tags = tagIds.stream()
-                .map(tagId -> {
-                    try {
-                        String tagName = nameCacheService.getTagName(tagId, apiKey);
-                        return new TagItem(tagId, tagName);
-                    } catch (IOException e) {
-                        logger.warn("Failed to fetch name for tag {}: {}. Using fallback name.", tagId, e.getMessage());
-                        return new TagItem(tagId, "Tag " + tagId);
-                    }
-                })
-                .sorted((a, b) -> Integer.compare(a.id(), b.id()))
-                .toList();
-            
-            if (extractedMetadata.isEmpty() && tags.isEmpty() && category == null && annotations.isEmpty()) {
-                logger.warn("No classification data found for scan ID {}", scanId);
-            } else {
-                logger.info("Successfully fetched search results for scan ID {}: {} metadata fields, {} tags, {} annotations, category: {}",
-                    scanId, extractedMetadata.size(), tags.size(), annotations.size(), category);
+            if (!unmatchedFilenames.isEmpty()) {
+                logger.warn("No search hit found for {} file(s) in scan ID {}: {}", unmatchedFilenames.size(), scanId, unmatchedFilenames);
             }
-            return new ClassificationData(extractedMetadata, tags, category, annotations);
+            logger.info("Per-file search complete for scan ID {}: {}/{} files matched",
+                scanId, result.size(), enhancedFilenames.size());
+            return result;
         }
     }
+
+    private String extractHitIdentifier(JSONObject hit) {
+        JSONObject src = hit.optJSONObject("_source");
+        if (src != null) {
+            String fileName = src.optString("ds#file_name", null);
+            if (fileName != null && !fileName.isEmpty()) return fileName;
+        }
+        return hit.optString("_id", null);
+    }
+
+    private String findMatchingEnhancedFilename(String identifier, List<String> enhancedFilenames) {
+        if (identifier == null) return null;
+        return enhancedFilenames.contains(identifier) ? identifier : null;
+    }
+
+    private ClassificationData parseSourceIntoClassificationData(JSONObject src) {
+        java.util.Map<Integer, String> extractedMetadataMap = new java.util.HashMap<>();
+        java.util.Set<Integer> tagIds = new java.util.HashSet<>();
+        String category = null;
+        java.util.Map<Integer, Integer> annotationCounts = new java.util.HashMap<>();
+        java.util.Map<Integer, java.util.List<String>> annotationPhraseMatches = new java.util.HashMap<>();
+
+        for (String key : src.keySet()) {
+            if (key.startsWith("extracted_metadata#")) {
+                try {
+                    int id = Integer.parseInt(key.substring("extracted_metadata#".length()));
+                    Object value = src.get(key);
+                    if (value != null) extractedMetadataMap.put(id, String.valueOf(value));
+                } catch (NumberFormatException e) {
+                    logger.debug("Skipping invalid metadata key: {}", key);
+                }
+            } else if (key.startsWith("annotation_stats#count.")) {
+                try {
+                    int id = Integer.parseInt(key.substring("annotation_stats#count.".length()));
+                    Object value = src.get(key);
+                    if (value != null) annotationCounts.put(id, Integer.parseInt(String.valueOf(value)));
+                } catch (NumberFormatException e) {
+                    logger.debug("Skipping invalid annotation count key: {}", key);
+                }
+            } else if (key.startsWith("annotation.")) {
+                try {
+                    int id = Integer.parseInt(key.substring("annotation.".length()));
+                    Object value = src.get(key);
+                    if (value instanceof JSONArray phraseArray) {
+                        java.util.List<String> phrases = new java.util.ArrayList<>();
+                        for (int j = 0; j < phraseArray.length(); j++) {
+                            Object phrase = phraseArray.get(j);
+                            if (phrase != null) phrases.add(String.valueOf(phrase));
+                        }
+                        annotationPhraseMatches.put(id, phrases);
+                    }
+                } catch (NumberFormatException e) {
+                    logger.debug("Skipping invalid annotation phrase match key: {}", key);
+                }
+            }
+        }
+
+        if (src.has("dxr#tags")) {
+            Object tagsValue = src.get("dxr#tags");
+            if (tagsValue instanceof JSONArray tagsArray) {
+                for (int j = 0; j < tagsArray.length(); j++) {
+                    try {
+                        tagIds.add(tagsArray.getInt(j));
+                    } catch (Exception e) {
+                        logger.debug("Skipping invalid tag ID: {}", tagsArray.opt(j));
+                    }
+                }
+            }
+        }
+
+        if (src.has("ai#category")) {
+            Object categoryValue = src.get("ai#category");
+            if (categoryValue != null) category = String.valueOf(categoryValue);
+        }
+
+        java.util.List<MetadataItem> extractedMetadata = extractedMetadataMap.entrySet().stream()
+            .map(entry -> {
+                try {
+                    String name = nameCacheService.getMetadataExtractorName(entry.getKey(), apiKey);
+                    return new MetadataItem(entry.getKey(), name, entry.getValue());
+                } catch (IOException e) {
+                    logger.warn("Failed to fetch name for metadata extractor {}: {}. Using fallback name.", entry.getKey(), e.getMessage());
+                    return new MetadataItem(entry.getKey(), "Metadata " + entry.getKey(), entry.getValue());
+                }
+            })
+            .sorted((a, b) -> Integer.compare(a.id(), b.id()))
+            .toList();
+
+        java.util.List<AnnotationStat> annotations = annotationCounts.entrySet().stream()
+            .map(entry -> {
+                try {
+                    String name = nameCacheService.getAnnotationName(entry.getKey(), apiKey);
+                    java.util.List<String> phrases = annotationPhraseMatches.getOrDefault(entry.getKey(), java.util.List.of());
+                    return new AnnotationStat(entry.getKey(), name, entry.getValue(), phrases);
+                } catch (IOException e) {
+                    logger.warn("Failed to fetch name for annotation {}: {}. Using fallback name.", entry.getKey(), e.getMessage());
+                    java.util.List<String> phrases = annotationPhraseMatches.getOrDefault(entry.getKey(), java.util.List.of());
+                    return new AnnotationStat(entry.getKey(), "Annotation " + entry.getKey(), entry.getValue(), phrases);
+                }
+            })
+            .sorted((a, b) -> Integer.compare(a.id(), b.id()))
+            .toList();
+
+        java.util.List<TagItem> tags = tagIds.stream()
+            .map(tagId -> {
+                try {
+                    String name = nameCacheService.getTagName(tagId, apiKey);
+                    return new TagItem(tagId, name);
+                } catch (IOException e) {
+                    logger.warn("Failed to fetch name for tag {}: {}. Using fallback name.", tagId, e.getMessage());
+                    return new TagItem(tagId, "Tag " + tagId);
+                }
+            })
+            .sorted((a, b) -> Integer.compare(a.id(), b.id()))
+            .toList();
+
+        return new ClassificationData(extractedMetadata, tags, category, annotations);
+    }
+
 }

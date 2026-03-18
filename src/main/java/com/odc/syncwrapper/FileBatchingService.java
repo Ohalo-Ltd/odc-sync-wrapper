@@ -1,18 +1,24 @@
 package com.odc.syncwrapper;
 
+import jakarta.annotation.PostConstruct;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
-import jakarta.annotation.PostConstruct;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import java.io.IOException;
-import java.util.*;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.UUID;
 
 @Service
 public class FileBatchingService {
@@ -24,6 +30,9 @@ public class FileBatchingService {
 
     @Autowired
     private NameCacheService nameCacheService;
+
+    @Autowired
+    private FileNamingStrategy fileNamingStrategy;
 
     @Value("${DXR_BASE_URL}")
     private String baseUrl;
@@ -162,7 +171,7 @@ public class FileBatchingService {
                 for (FileRequest request : batch) {
                     try {
                         String originalFilename = request.file().getOriginalFilename();
-                        String enhancedFilename = createUniqueFilename(originalFilename);
+                        String enhancedFilename = fileNamingStrategy.createUniqueFilename(originalFilename);
                         FileData fileData = new FileData(
                             originalFilename,
                             enhancedFilename,
@@ -237,10 +246,21 @@ public class FileBatchingService {
 
                 if ("FINISHED".equals(status.state())) {
                     logger.info("Job {} completed successfully. Fetching classification results for {} files", jobId, batch.size());
-                    DxrClient.ClassificationData classificationData = effectiveClient.getTagIds(status.datasourceScanId());
+                    List<String> enhancedFilenames = fileDataList.stream()
+                        .map(FileData::enhancedFilename)
+                        .toList();
+                    Map<String, DxrClient.ClassificationData> perFileData =
+                        effectiveClient.getTagIdsPerFile(status.datasourceScanId(), enhancedFilenames);
                     for (int i = 0; i < batch.size() && i < fileDataList.size(); i++) {
                         FileRequest request = batch.get(i);
                         FileData fileData = fileDataList.get(i);
+                        DxrClient.ClassificationData classificationData = perFileData.get(fileData.enhancedFilename());
+                        if (classificationData == null) {
+                            logger.warn("No classification data found for file '{}' (enhanced: '{}'). Returning empty result.",
+                                fileData.originalFilename(), fileData.enhancedFilename());
+                            classificationData = new DxrClient.ClassificationData(
+                                Collections.emptyList(), Collections.emptyList(), null, Collections.emptyList());
+                        }
                         // Convert DxrClient records to FileBatchingService records
                         java.util.List<MetadataItem> extractedMetadata = classificationData.extractedMetadata().stream()
                             .map(item -> new MetadataItem(item.id(), item.name(), item.value()))
@@ -251,7 +271,7 @@ public class FileBatchingService {
                         java.util.List<TagItem> tags = classificationData.tags().stream()
                             .map(tag -> new TagItem(tag.id(), tag.name()))
                             .toList();
-                        logger.info("File '{}' classified successfully with {} metadata fields, {} tags, {} annotations", 
+                        logger.info("File '{}' classified successfully with {} metadata fields, {} tags, {} annotations",
                             fileData.originalFilename(), extractedMetadata.size(), tags.size(), annotations.size());
                         FileClassificationResult result = new FileClassificationResult(
                             fileData.originalFilename(),
@@ -314,22 +334,6 @@ public class FileBatchingService {
             return firstDatasourceId;
         }
         return currentValue;
-    }
-
-    private String createUniqueFilename(String originalFilename) {
-        String uuid = UUID.randomUUID().toString();
-        if (originalFilename == null || originalFilename.isEmpty()) {
-            return uuid;
-        }
-        
-        int lastDotIndex = originalFilename.lastIndexOf('.');
-        if (lastDotIndex == -1) {
-            return originalFilename + "_" + uuid;
-        } else {
-            String nameWithoutExtension = originalFilename.substring(0, lastDotIndex);
-            String extension = originalFilename.substring(lastDotIndex);
-            return nameWithoutExtension + "_" + uuid + extension;
-        }
     }
 
     public static record FileRequest(MultipartFile file, CompletableFuture<FileClassificationResult> result, String requestApiKey) {}
