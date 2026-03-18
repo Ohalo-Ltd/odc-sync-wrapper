@@ -1,18 +1,24 @@
 package com.odc.syncwrapper;
 
+import jakarta.annotation.PostConstruct;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
-import jakarta.annotation.PostConstruct;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import java.io.IOException;
-import java.util.*;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.UUID;
 
 @Service
 public class FileBatchingService {
@@ -24,6 +30,9 @@ public class FileBatchingService {
 
     @Autowired
     private NameCacheService nameCacheService;
+
+    @Autowired
+    private FileNamingStrategy fileNamingStrategy;
 
     @Value("${DXR_BASE_URL}")
     private String baseUrl;
@@ -162,7 +171,7 @@ public class FileBatchingService {
                 for (FileRequest request : batch) {
                     try {
                         String originalFilename = request.file().getOriginalFilename();
-                        String enhancedFilename = createUniqueFilename(originalFilename);
+                        String enhancedFilename = fileNamingStrategy.createUniqueFilename(originalFilename);
                         FileData fileData = new FileData(
                             originalFilename,
                             enhancedFilename,
@@ -325,22 +334,6 @@ public class FileBatchingService {
             return firstDatasourceId;
         }
         return currentValue;
-    }
-
-    private String createUniqueFilename(String originalFilename) {
-        String uuid = UUID.randomUUID().toString();
-        if (originalFilename == null || originalFilename.isEmpty()) {
-            return uuid;
-        }
-        
-        int lastDotIndex = originalFilename.lastIndexOf('.');
-        if (lastDotIndex == -1) {
-            return originalFilename + "_" + uuid;
-        } else {
-            String nameWithoutExtension = originalFilename.substring(0, lastDotIndex);
-            String extension = originalFilename.substring(lastDotIndex);
-            return nameWithoutExtension + "_" + uuid + extension;
-        }
     }
 
     public static record FileRequest(MultipartFile file, CompletableFuture<FileClassificationResult> result, String requestApiKey) {}
